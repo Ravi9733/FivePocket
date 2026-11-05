@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Pass 3: full-resolution refinement, +-3 px around the coarse vector, SAD over every 2nd pixel of the 32x32 block;
+// best per block by atomicMin(cost << 6 | candidate of 49).
+layout(local_size_x = 64) in;
+#include "fi_common.glsl"
+void main() {
+    uint block = gl_GlobalInvocationID.x / 49u, cand = gl_GlobalInvocationID.x % 49u;
+    if (block >= uint(pc.blocks.x * pc.blocks.y)) return;
+    ivec2 b = ivec2(int(block) % pc.blocks.x, int(block) / pc.blocks.x);
+    ivec2 o = ivec2(int(cand) % 7, int(cand) / 7) - 3;
+    ivec2 v = coarseVector(block) + o;
+    float sad = 0.0;
+    for (int y = 0; y < 32; y += 2) for (int x = 0; x < 32; x += 2) {
+        ivec2 p = min(b * 32 + ivec2(x, y), pc.size - 1);
+        sad += abs(luma(imageLoad(curFrame, p)) - luma(imageLoad(prevFrame, clamp(p + v, ivec2(0), pc.size - 1))));
+    }
+    float cost = sad * 255.0 + pc.penalty * 0.25 * float(abs(o.x) + abs(o.y));
+    atomicMin(fine[block], (min(uint(cost * 8.0), 67108863u) << 6) | cand);
+}

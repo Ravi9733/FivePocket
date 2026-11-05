@@ -1,0 +1,24 @@
+#version 450
+// Guarded reference EDRAM -> explicit half-color initialization bridge.
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0,std430) readonly buffer Source { uint words[]; } source;
+layout(set=0,binding=1,std430) buffer Result { uint words[]; } result;
+uint rgbHalf(uint code){
+    uint e=code>>7u,m=code&127u;
+    if(e!=0u)return ((e+12u)<<10u)|(m<<3u);
+    if(m==0u)return 0u;
+    uint leading=uint(findMSB(m));
+    return ((leading+6u)<<10u)|((m<<(10u-leading))&1023u);
+}
+void main(){
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if(p.x>=1280u || p.y>=720u || source.words.length()!=2621448 || result.words.length()!=1843208)return;
+    for(uint i=0u;i<4u;++i)if(source.words[i]!=0x5a5a5a5au || source.words[2621444u+i]!=0x5a5a5a5au)return;
+    uint tile=720u+(p.y/16u)*16u+p.x/80u;
+    uint from=4u+tile*1280u+(p.y%16u)*80u+p.x%80u;
+    uint packed=source.words[from],at=4u+(p.y*1280u+p.x)*2u;
+    uint r=rgbHalf(packed&1023u),g=rgbHalf((packed>>10u)&1023u),b=rgbHalf((packed>>20u)&1023u);
+    // Nearest-even and toward-zero agree for these four normalized alpha values.
+    uint a=uvec4(0u,0x3555u,0x3955u,0x3c00u)[packed>>30u];
+    result.words[at]=r|(g<<16u);result.words[at+1u]=b|(a<<16u);
+}

@@ -1,0 +1,7 @@
+# E-mail addresses allowed in published files: third-party authors named in the copyright notices we must keep.
+tomc@tctechstuff.com Tom Clay, ReXGlue texture code (BSD-3-Clause notice)
+evan@nemerson.com Evan Nemerson, SIMDe (MIT notice)
+mark.gillard@outlook.com.au Mark Gillard, toml++ (MIT notice)
+todd.miller@courtesan.com Todd C. Miller, MinGW-w64 runtime (ISC notice)
+mohaps@gmail.com Saurav Mohapatra, TinySHA1 (notice in the file)
+jseward@acm.org Julian Seward, bzip2 (its notice inside python.org's LICENSE.txt of the embeddable Python)

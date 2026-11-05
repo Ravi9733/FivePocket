@@ -1,0 +1,71 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -1055,6 +1055,13 @@ bool Recompiler::Recompile(
+         println("\t{}.f64 = float(1.0 / {}.f64);", f(insn.operands[0]), f(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_FRSQRTE:
++        // Compatibility fallback: value classes and the ISA error bound are
++        // preserved, but this is not Xenon's implementation-dependent seed.
++        printSetFlushMode(false);
++        println("\t{}.f64 = ppc_frsqrte_compat({}.f64);", f(insn.operands[0]), f(insn.operands[1]));
++        break;
++
+     case PPC_INST_FRSP:
+         printSetFlushMode(false);
+         println("\t{}.f64 = double(float({}.f64));", f(insn.operands[0]), f(insn.operands[1]));
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -683,6 +683,14 @@ inline simde__m128i simde_mm_cmpgt_epu32(simde__m128i a, simde__m128i b)
+ {
+     simde__m128i c = simde_mm_set1_epi32(INT32_MIN);
+     return simde_mm_cmpgt_epi32(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
++}
++
++inline double ppc_frsqrte_compat(double value) noexcept
++{
++    // Power ISA permits implementation-dependent estimate bits. Returning the
++    // host-exact result preserves the required value classes and error bound,
++    // but does not reproduce Xenon's estimate table or FPSCR side effects.
++    return 1.0 / std::sqrt(value);
+ }
+ 
+ inline simde__m128i simde_mm_vpkuwus(simde__m128i a, simde__m128i b)
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+--- a/XenonTests/exact_vector_recompiler.cc
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -7,6 +7,7 @@
+ #include <cstdlib>
+ #include <initializer_list>
+ #include <iostream>
++#include <limits>
+ #include <string_view>
+ 
+ namespace
+@@ -232,5 +233,24 @@ int main()
+           "ctx.v5.u32",
+           "ctx.cr6.so = 0;" });
+ 
++    ExpectOrdered(
++        "frsqrte compatibility",
++        Translate(PPC_INST_FRSQRTE, "frsqrte", { 4, 5 }),
++        { "ctx.fpscr.disableFlushMode();",
++          "ctx.f4.f64 = ppc_frsqrte_compat(ctx.f5.f64);" });
++
++    if (ppc_frsqrte_compat(4.0) != 0.5 ||
++        !std::isinf(ppc_frsqrte_compat(0.0)) ||
++        std::signbit(ppc_frsqrte_compat(0.0)) ||
++        !std::isinf(ppc_frsqrte_compat(-0.0)) ||
++        !std::signbit(ppc_frsqrte_compat(-0.0)) ||
++        ppc_frsqrte_compat(std::numeric_limits<double>::infinity()) != 0.0 ||
++        !std::isnan(ppc_frsqrte_compat(-1.0)) ||
++        !std::isnan(ppc_frsqrte_compat(std::numeric_limits<double>::quiet_NaN())))
++    {
++        std::cerr << "frsqrte compatibility value classes are incorrect\n";
++        return 1;
++    }
++
+     return 0;
+ }

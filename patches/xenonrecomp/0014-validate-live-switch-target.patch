@@ -1,0 +1,36 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -625,12 +625,17 @@
+                 }
+                 else
+                 {
++                    // Metadata describes original constant tables, but guest
++                    // memory may change. Never jump to a stale recovered case.
++                    println("\t\tif ({}.u32 != 0x{:X}U) {{", ctr(), label);
++                    println("\t\t\tPPC_CALL_INDIRECT_FUNC({}.u32); return;", ctr());
++                    println("\t\t}}");
+                     println("\t\tgoto loc_{:X};", label);
+                 }
+             }
+ 
+             println("\tdefault:");
+-            println("\t\t__builtin_unreachable();");
++            println("\t\tPPC_CALL_INDIRECT_FUNC({}.u32); return;", ctr());
+             println("\t}}");
+ 
+             switchTable = config.switchTables.end();
+diff --git a/XenonTests/update_form_recompiler.cc b/XenonTests/update_form_recompiler.cc
+--- a/XenonTests/update_form_recompiler.cc
++++ b/XenonTests/update_form_recompiler.cc
+@@ -71,7 +71,9 @@
+     ExpectOrdered(
+         "word switch selector",
+         Translate(PPC_INST_BCTR, "bctr", {}),
+-        { "switch (ctx.r11.u32)", "case 0:", "goto loc_1004;" });
++        { "switch (ctx.r11.u32)", "case 0:", "if (ctx.ctr.u32 != 0x1004U)",
++          "PPC_CALL_INDIRECT_FUNC(ctx.ctr.u32); return;", "goto loc_1004;",
++          "default:", "PPC_CALL_INDIRECT_FUNC(ctx.ctr.u32); return;" });
+ 
+     ExpectOrdered(
+         "stfsu",

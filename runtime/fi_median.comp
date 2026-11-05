@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Pass 4: the final vector of each block = component-wise median of the 3x3 refined vectors around it.
+layout(local_size_x = 64) in;
+#include "fi_common.glsl"
+ivec2 refined(ivec2 b) {
+    b = clamp(b, ivec2(0), pc.blocks - 1); uint block = uint(b.y * pc.blocks.x + b.x);
+    uint cand = fine[block] & 63u;
+    return coarseVector(block) + ivec2(int(cand) % 7, int(cand) / 7) - 3;
+}
+void main() {
+    uint block = gl_GlobalInvocationID.x;
+    if (block >= uint(pc.blocks.x * pc.blocks.y)) return;
+    ivec2 b = ivec2(int(block) % pc.blocks.x, int(block) / pc.blocks.x);
+    int xs[9], ys[9]; int n = 0;
+    for (int j = -1; j <= 1; ++j) for (int i = -1; i <= 1; ++i) { ivec2 v = refined(b + ivec2(i, j)); xs[n] = v.x; ys[n] = v.y; ++n; }
+    for (int i = 1; i < 9; ++i) for (int k = i; k > 0 && xs[k - 1] > xs[k]; --k) { int t = xs[k]; xs[k] = xs[k - 1]; xs[k - 1] = t; }
+    for (int i = 1; i < 9; ++i) for (int k = i; k > 0 && ys[k - 1] > ys[k]; --k) { int t = ys[k]; ys[k] = ys[k - 1]; ys[k - 1] = t; }
+    motion[block] = ivec2(xs[4], ys[4]);
+}

@@ -1,0 +1,364 @@
+{
+ "schema": "builder-notices/1",
+ "package": "the Windows builder package (builder.exe, host-tools, python, the tools and the files the profile names)",
+ "components": [
+  {
+   "id": "this-project",
+   "name": "FivePocket builder (this project)",
+   "origin": "this download; its sources are in it",
+   "terms": "GNU General Public License, version 3 or (at your option) any later version",
+   "in_package": [
+    "builder.exe",
+    "tools/*",
+    "android/*",
+    "local-analysis/*",
+    "host-tools/xex_image.exe",
+    "host-tools/xmem-lzx.exe"
+   ],
+   "note": "The tools, the launcher, the runtime sources and the parameter files are this project's own work unless a part below says otherwise. The complete sources of every program in this package are in the download.",
+   "texts": [
+    {
+     "root": "repo",
+     "path": "COPYING",
+     "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    }
+   ]
+  },
+  {
+   "id": "xenonrecomp",
+   "name": "XenonRecomp",
+   "origin": "https://github.com/sonicnext-dev/XenonRecomp.git (hedge-dev and contributors)",
+   "terms": "MIT",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xex_image.exe",
+    "host-tools/ppc_context.h"
+   ],
+   "note": "Built with this project's patches; the patched source and the build script are in the download. As a whole XenonRecomp.exe comes under the GNU General Public License because of part 3.",
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "LICENSE.md",
+     "sha256": "bcb33ae2cbc6c0f2818712d806112e774e684fce01ce80573f92adf80b7487f4"
+    }
+   ]
+  },
+  {
+   "id": "binutils-ppc-disassembler",
+   "name": "PowerPC disassembler of GNU binutils",
+   "origin": "GNU binutils (Free Software Foundation), as carried in XenonRecomp's thirdparty/disasm",
+   "terms": "GNU General Public License, version 2 or any later version; taken here under version 3",
+   "in_package": [
+    "host-tools/XenonRecomp.exe"
+   ],
+   "note": "The notice below is the head of ppc-dis.c. The text of version 3 of the licence is under part 1.",
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/disasm/ppc-dis.c",
+     "sha256": "352a4f17cdfe95fe284653c4ba343308557d4fb16b96bed3b136d6df54c16b58",
+     "lines": [
+      1,
+      20
+     ]
+    }
+   ]
+  },
+  {
+   "id": "libmspack-lzx",
+   "name": "libmspack (LZX decoder)",
+   "origin": "https://github.com/kyz/libmspack",
+   "terms": "GNU Lesser General Public License, version 2.1",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xmem-lzx.exe"
+   ],
+   "note": "Only mspack/lzxd.c is compiled in. Its source and the build script are in the download, so the programs can be linked again with another version of it.",
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/libmspack/libmspack/COPYING.LIB",
+     "sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7"
+    }
+   ]
+  },
+  {
+   "id": "tiny-aes-c",
+   "name": "tiny-AES-c",
+   "origin": "https://github.com/kokke/tiny-AES-c.git",
+   "terms": "The Unlicense (public domain)",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xex_image.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/tiny-AES-c/unlicense.txt",
+     "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+    }
+   ]
+  },
+  {
+   "id": "tinysha1",
+   "name": "TinySHA1",
+   "origin": "https://github.com/mohaps/TinySHA1 (as modified for Xenia)",
+   "terms": "permission notice in the file",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xex_image.exe"
+   ],
+   "note": "The notice below is the head of TinySHA1.hpp.",
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/TinySHA1/TinySHA1.hpp",
+     "sha256": "54dc7225c1fa3ed9073f6fbec00aa0910ffee3a34347d65e10fac077b69f7a95",
+     "lines": [
+      1,
+      24
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fmt",
+   "name": "{fmt}",
+   "origin": "https://github.com/fmtlib/fmt.git",
+   "terms": "MIT with an exception for binary forms",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xex_image.exe",
+    "host-tools/xenos/*/XenosRecomp.exe",
+    "host-tools/xenos/*/XenosShaderPreflight.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/fmt/LICENSE",
+     "sha256": "07580f2a3b35709ce703d523f447b242f6dfec7582a8c0df102c7fa2849375f8"
+    }
+   ]
+  },
+  {
+   "id": "tomlplusplus",
+   "name": "toml++",
+   "origin": "https://github.com/marzer/tomlplusplus.git",
+   "terms": "MIT",
+   "in_package": [
+    "host-tools/XenonRecomp.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/tomlplusplus/LICENSE",
+     "sha256": "529bc3900a9571e49db285b0df432397e70b881cc3bf48de6667ae74ff4b06d8"
+    }
+   ]
+  },
+  {
+   "id": "xxhash",
+   "name": "xxHash",
+   "origin": "https://github.com/Cyan4973/xxHash.git",
+   "terms": "BSD 2-Clause",
+   "in_package": [
+    "host-tools/XenonRecomp.exe",
+    "host-tools/xenos/*/XenosRecomp.exe",
+    "host-tools/xenos/*/XenosShaderPreflight.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/xxHash/LICENSE",
+     "sha256": "6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a"
+    }
+   ]
+  },
+  {
+   "id": "simde",
+   "name": "SIMD Everywhere (SIMDe)",
+   "origin": "https://github.com/simd-everywhere/simde-no-tests.git",
+   "terms": "MIT",
+   "in_package": [
+    "tools/XenonRecomp/thirdparty/simde/*"
+   ],
+   "note": "Headers the game library is compiled with.",
+   "texts": [
+    {
+     "root": "xenonrecomp",
+     "path": "thirdparty/simde/COPYING",
+     "sha256": "75ce0a8c5a7bff42fbd6f8f3b469b518132132c4f4948fb8d02b1ccb5d0df9d8"
+    }
+   ]
+  },
+  {
+   "id": "xenosrecomp",
+   "name": "XenosRecomp",
+   "origin": "https://github.com/sonicnext-dev/XenosRecomp.git (hedge-dev and contributors)",
+   "terms": "MIT",
+   "in_package": [
+    "host-tools/xenos/*/XenosRecomp.exe",
+    "host-tools/xenos/*/XenosShaderPreflight.exe",
+    "host-tools/xenos/*/shader_common.h"
+   ],
+   "note": "Built with this project's changes; the changed source and the build script are in the download.",
+   "texts": [
+    {
+     "root": "xenosrecomp",
+     "path": "LICENSE.md",
+     "sha256": "bcb33ae2cbc6c0f2818712d806112e774e684fce01ce80573f92adf80b7487f4"
+    }
+   ]
+  },
+  {
+   "id": "zstd",
+   "name": "Zstandard",
+   "origin": "https://github.com/facebook/zstd.git",
+   "terms": "BSD 3-Clause (offered under BSD or GPL version 2; the BSD terms are taken)",
+   "in_package": [
+    "host-tools/xenos/*/XenosRecomp.exe",
+    "host-tools/xenos/*/XenosShaderPreflight.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenosrecomp",
+     "path": "thirdparty/zstd/LICENSE",
+     "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    }
+   ]
+  },
+  {
+   "id": "smol-v",
+   "name": "SMOL-V",
+   "origin": "https://github.com/aras-p/smol-v",
+   "terms": "public domain or MIT, as its file says",
+   "in_package": [
+    "host-tools/xenos/*/XenosRecomp.exe",
+    "host-tools/xenos/*/XenosShaderPreflight.exe"
+   ],
+   "texts": [
+    {
+     "root": "xenosrecomp",
+     "path": "thirdparty/smol-v/license.txt",
+     "sha256": "9cea538cc1ee6680f4d13e212bfef5b581cd5d873cbedf6dc07699dbe7e69651"
+    }
+   ]
+  },
+  {
+   "id": "ffmpeg",
+   "name": "FFmpeg (source of libavcodec and libavutil for the sound decoder)",
+   "origin": "https://github.com/xenia-project/FFmpeg at 15ece0882e8d",
+   "terms": "GNU Lesser General Public License, version 2.1 or later",
+   "in_package": [
+    "local-analysis/builder/xma-source/*",
+    "tools/own_disc/xma_decoder/*"
+   ],
+   "note": "Carried as source and compiled by the player's own run with the command list beside it.",
+   "texts": [
+    {
+     "root": "ffmpeg-tar",
+     "member": "COPYING.LGPLv2.1",
+     "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"
+    },
+    {
+     "root": "ffmpeg-tar",
+     "member": "LICENSE.md",
+     "sha256": "cb48bf09a11f5fb576cddb0431c8f5ed0a60157a9ec942adffc13907cbe083f2"
+    }
+   ]
+  },
+  {
+   "id": "game-library-parts",
+   "name": "Parts inside the game library the builder makes (AMD FSR 1, Qualcomm GSR 1, files adapted from Xenia and ReXGlue, FFmpeg, SIMDe, the Android NDK's runtime)",
+   "origin": "named part by part in the text below",
+   "terms": "MIT, BSD 3-Clause, LGPL 2.1 or later, Apache 2.0 with LLVM exceptions, as the text says",
+   "in_package": [
+    "android/*",
+    "tools/host_guest_trace/*",
+    "tools/vulkan_probe/*",
+    "local-analysis/builder/portable/supplied/*"
+   ],
+   "note": "The same notices the app shows; the runtime sources in this package carry these parts.",
+   "texts": [
+    {
+     "root": "repo",
+     "path": "docs/alpha/LICENCES.md",
+     "sha256": "d3467f8f96d63a03b0465905a3c89be0932b4ecd151cb5d8c0794baeb94e2fff"
+    }
+   ]
+  },
+  {
+   "id": "llvm-mingw-runtime",
+   "name": "LLVM runtime libraries linked into the Windows programs (libc++, libunwind, compiler-rt)",
+   "origin": "the llvm-mingw toolchain the programs were built with",
+   "terms": "Apache License 2.0 with LLVM Exceptions",
+   "in_package": [
+    "builder.exe",
+    "host-tools/*.exe",
+    "host-tools/xenos/*/*.exe"
+   ],
+   "general": true,
+   "texts": [
+    {
+     "root": "llvm-mingw",
+     "path": "LICENSE.TXT",
+     "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"
+    }
+   ]
+  },
+  {
+   "id": "mingw-w64-runtime",
+   "name": "MinGW-w64 runtime and winpthreads linked into the Windows programs",
+   "origin": "the llvm-mingw toolchain the programs were built with",
+   "terms": "the MinGW-w64 runtime's own permissive terms",
+   "in_package": [
+    "builder.exe",
+    "host-tools/*.exe",
+    "host-tools/xenos/*/*.exe"
+   ],
+   "general": true,
+   "texts": [
+    {
+     "root": "llvm-mingw",
+     "path": "x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt",
+     "sha256": "1db8da07b436c68833c0673ffee3d9fcb2526047f3820b81661865dfedc79a1f"
+    },
+    {
+     "root": "llvm-mingw",
+     "path": "x86_64-w64-mingw32/share/mingw32/COPYING.winpthreads.txt",
+     "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+    }
+   ]
+  },
+  {
+   "id": "python",
+   "name": "CPython 3.12.10, embeddable package, with the libraries python.org ships in it",
+   "origin": "https://www.python.org/",
+   "terms": "PSF License 2.0 and the third-party terms in its own file",
+   "in_package": [
+    "python/*"
+   ],
+   "travels": "python/LICENSE.txt"
+  },
+  {
+   "id": "directx-shader-compiler",
+   "name": "DirectX Shader Compiler (Microsoft release v1.9.2607)",
+   "origin": "https://github.com/microsoft/DirectXShaderCompiler",
+   "terms": "LLVM release licence for the compiler; Microsoft's terms for the release and dxil.dll",
+   "in_package": [
+    "host-tools/dxc/*"
+   ],
+   "fetched": "the builder's fetch step takes the release from its publisher after the player accepts its terms, and puts its licence files beside it"
+  },
+  {
+   "id": "android-ndk",
+   "name": "Android NDK r27c",
+   "origin": "https://developer.android.com/ndk",
+   "terms": "Google's terms for the NDK",
+   "in_package": [
+    "(outside the package: the folder the fetch step unpacks)"
+   ],
+   "fetched": "the builder's fetch step takes the archive from Google after the player accepts its terms"
+  }
+ ]
+}

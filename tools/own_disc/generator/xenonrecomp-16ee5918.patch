@@ -1,0 +1,2033 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b89407f..8f1ccc6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,5 +26,6 @@ add_subdirectory(${XENONUTILS_ROOT})
+ 
+ # Only tests if this is the top level project
+ if (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR})
++    enable_testing()
+     add_subdirectory(XenonTests)
+ endif()
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index f8f5223..17da206 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -308,6 +308,20 @@ bool Recompiler::Recompile(
+             return fmt::format("ctx.cr{}", index);
+         };
+ 
++    auto crBit = [&](size_t index)
++        {
++            const char* field;
++            switch (index % 4)
++            {
++            case 0: field = "lt"; break;
++            case 1: field = "gt"; break;
++            case 2: field = "eq"; break;
++            default: field = "so"; break;
++            }
++
++            return fmt::format("{}.{}", cr(index / 4), field);
++        };
++
+     auto ctr = [&]()
+         {
+             if (config.ctrAsLocalVariable)
+@@ -419,6 +433,22 @@ bool Recompiler::Recompile(
+             }
+         };
+ 
++    auto printConditionalDirectBranch = [&](const std::string_view& condition, uint32_t address)
++        {
++            if (address < fn.base || address >= fn.base + fn.size)
++            {
++                println("\tif ({}) {{", condition);
++                print("\t");
++                printFunctionCall(address);
++                println("\t\treturn;");
++                println("\t}}");
++            }
++            else
++            {
++                println("\tif ({}) goto loc_{:X};", condition, address);
++            }
++        };
++
+     auto printSetFlushMode = [&](bool enable)
+         {
+             auto newState = enable ? CSRState::VMX : CSRState::FPU;
+@@ -522,7 +552,45 @@ bool Recompiler::Recompile(
+     if (id == PPC_INST_VUPKHSB128 && insn.operands[2] == 0x60) id = PPC_INST_VUPKHSH128;
+     else if (id == PPC_INST_VUPKLSB128 && insn.operands[2] == 0x60) id = PPC_INST_VUPKLSH128;
+ 
+-    switch (id)
++    // Decode fixed-point traps from their encoding so all disassembler aliases
++    // have identical semantics. RA=0 still reads r0; immediates are sign-extended.
++    const uint32_t trapWord = ByteSwap(*data);
++    const uint32_t trapOp = trapWord >> 26;
++    const uint32_t trapXo = (trapWord >> 1) & 0x3FF;
++    const bool immediateTrap = trapOp == 2 || trapOp == 3;
++    const bool registerTrap = trapOp == 31 && (trapWord & 1) == 0 && (trapXo == 4 || trapXo == 68);
++    // Both mftb and mfspr aliases read the same 64-bit TB (268), or its
++    // zero-extended upper word (269). Decode the selector, not alias operands.
++    const uint32_t timebaseSelector = ((trapWord >> 16) & 31) | ((trapWord >> 6) & 0x3E0);
++    const bool timebaseRead = trapOp == 31 && (trapWord & 1) == 0
++        && (trapXo == 371 || trapXo == 339)
++        && (timebaseSelector == 268 || timebaseSelector == 269);
++    if (timebaseRead)
++    {
++        println("\t{}.u64 = uint64_t(PPC_READ_TIMEBASE()){};",
++            r((trapWord >> 21) & 31), timebaseSelector == 269 ? " >> 32" : "");
++    }
++    else if (immediateTrap || registerTrap)
++    {
++        const uint32_t to = (trapWord >> 21) & 31;
++        const bool wide = immediateTrap ? trapOp == 2 : trapXo == 68;
++        if (to == 31)
++        {
++            println("\tPPC_RUNTIME_TRAP();");
++        }
++        else
++        {
++            const uint32_t bits = wide ? 64 : 32;
++            const int32_t imm = int32_t(trapWord & 0xFFFF) - ((trapWord & 0x8000) ? 0x10000 : 0);
++            const uint64_t extended = uint64_t(int64_t(imm));
++            const auto rhs = immediateTrap
++                ? fmt::format("0x{:X}{}", wide ? extended : uint64_t(uint32_t(extended)), wide ? "ULL" : "U")
++                : fmt::format("{}.u{}", r((trapWord >> 11) & 31), bits);
++            println("\tif (PPCTrapCondition<uint{}_t>({}, {}.u{}, {})) PPC_RUNTIME_TRAP();",
++                bits, to, r((trapWord >> 16) & 31), bits, rhs);
++        }
++    }
++    else switch (id)
+     {
+     case PPC_INST_ADD:
+         println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
+@@ -530,6 +598,20 @@ bool Recompiler::Recompile(
+             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
+         break;
+ 
++    case PPC_INST_ADDC:
++    case PPC_INST_ADDCO:
++        println("\t{}.u8 = {}.u32 + {}.u32 < {}.u32;", temp(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]));
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = ((~({}.u32 ^ {}.u32) & ({}.u32 ^ ({}.u32 + {}.u32))) >> 31) != 0;", xer(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]), r(insn.operands[1]), r(insn.operands[2]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_ADDE:
+         println("\t{}.u8 = ({}.u32 + {}.u32 < {}.u32) | ({}.u32 + {}.u32 + {}.ca < {}.ca);", temp(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]), r(insn.operands[1]), r(insn.operands[2]), xer(), xer());
+         println("\t{}.u64 = {}.u64 + {}.u64 + {}.ca;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]), xer());
+@@ -559,6 +641,20 @@ bool Recompiler::Recompile(
+         println("{};", static_cast<int32_t>(insn.operands[2] << 16));
+         break;
+ 
++    case PPC_INST_ADDME:
++    case PPC_INST_ADDMEO:
++        println("\t{}.u8 = ({}.u32 != 0) | {}.ca;", temp(), r(insn.operands[1]), xer());
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = !{}.ca && {}.s32 == INT32_MIN;", xer(), xer(), r(insn.operands[1]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = {}.u64 + {}.ca - 1;", r(insn.operands[0]), r(insn.operands[1]), xer());
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_ADDZE:
+         println("\t{}.s64 = {}.s64 + {}.ca;", temp(), r(insn.operands[1]), xer());
+         println("\t{}.ca = {}.u32 < {}.u32;", xer(), temp(), r(insn.operands[1]));
+@@ -608,7 +704,7 @@ bool Recompiler::Recompile(
+     case PPC_INST_BCTR:
+         if (switchTable != config.switchTables.end())
+         {
+-            println("\tswitch ({}.u64) {{", r(switchTable->second.r));
++            println("\tswitch ({}.u32) {{", r(switchTable->second.r));
+ 
+             for (size_t i = 0; i < switchTable->second.labels.size(); i++)
+             {
+@@ -622,12 +718,17 @@ bool Recompiler::Recompile(
+                 }
+                 else
+                 {
++                    // Metadata describes original constant tables, but guest
++                    // memory may change. Never jump to a stale recovered case.
++                    println("\t\tif ({}.u32 != 0x{:X}U) {{", ctr(), label);
++                    println("\t\t\tPPC_CALL_INDIRECT_FUNC({}.u32); return;", ctr());
++                    println("\t\t}}");
+                     println("\t\tgoto loc_{:X};", label);
+                 }
+             }
+ 
+             println("\tdefault:");
+-            println("\t\t__builtin_unreachable();");
++            println("\t\tPPC_CALL_INDIRECT_FUNC({}.u32); return;", ctr());
+             println("\t}}");
+ 
+             switchTable = config.switchTables.end();
+@@ -648,7 +749,7 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 == 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printConditionalDirectBranch(fmt::format("{}.u32 == 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDZLR:
+@@ -658,13 +759,22 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDNZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDNZF:
+-        // NOTE: assuming eq here as a shortcut because all the instructions in the game do that
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0 && !{}.eq) goto loc_{:X};", ctr(), cr(insn.operands[0] / 4), insn.operands[1]);
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0 && !{}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
++        break;
++
++    case PPC_INST_BDNZT:
++        println("\t--{}.u64;", ctr());
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0 && {}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
++        break;
++
++    case PPC_INST_BDZF:
++        println("\t--{}.u64;", ctr());
++        printConditionalDirectBranch(fmt::format("{}.u32 == 0 && !{}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
+         break;
+ 
+     case PPC_INST_BEQ:
+@@ -803,6 +913,10 @@ bool Recompiler::Recompile(
+         // no op
+         break;
+ 
++    case PPC_INST_DCBST:
++        // Host cache writeback is coherent; retain this as an ordering-free hint.
++        break;
++
+     case PPC_INST_DCBT:
+         // no op
+         break;
+@@ -984,6 +1098,13 @@ bool Recompiler::Recompile(
+         println("\t{}.f64 = float(1.0 / {}.f64);", f(insn.operands[0]), f(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_FRSQRTE:
++        // Compatibility fallback: value classes and the ISA error bound are
++        // preserved, but this is not Xenon's implementation-dependent seed.
++        printSetFlushMode(false);
++        println("\t{}.f64 = ppc_frsqrte_compat({}.f64);", f(insn.operands[0]), f(insn.operands[1]));
++        break;
++
+     case PPC_INST_FRSP:
+         printSetFlushMode(false);
+         println("\t{}.f64 = double(float({}.f64));", f(insn.operands[0]), f(insn.operands[1]));
+@@ -1024,7 +1145,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LBZU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U8({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LBZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U8({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LBZX:
+@@ -1052,7 +1179,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LDU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U64({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LDUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LDX:
+@@ -1078,6 +1211,20 @@ bool Recompiler::Recompile(
+         println("{}.u32);", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LFDU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", f(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LFDUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", f(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LFS:
+         printSetFlushMode(false);
+         print("\t{}.u32 = PPC_LOAD_U32(", temp());
+@@ -1087,6 +1234,22 @@ bool Recompiler::Recompile(
+         println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
+         break;
+ 
++    case PPC_INST_LFSU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u32 = PPC_LOAD_U32({});", temp(), ea());
++        println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LFSUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u32 = PPC_LOAD_U32({});", temp(), ea());
++        println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LFSX:
+         printSetFlushMode(false);
+         print("\t{}.u32 = PPC_LOAD_U32(", temp());
+@@ -1110,6 +1273,18 @@ bool Recompiler::Recompile(
+         println("{}.u32));", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LHAU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int16_t(PPC_LOAD_U16({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LHAUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int16_t(PPC_LOAD_U16({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LHZ:
+         print("\t{}.u64 = PPC_LOAD_U16(", r(insn.operands[0]));
+         if (insn.operands[2] != 0)
+@@ -1124,6 +1299,18 @@ bool Recompiler::Recompile(
+         println("{}.u32);", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LHZU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U16({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LHZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U16({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LHBRX:
+         // TODO: verify
+         print("\t{}.u64 = __builtin_bswap16(PPC_LOAD_U16(", r(insn.operands[0]));
+@@ -1140,6 +1327,7 @@ bool Recompiler::Recompile(
+         println("\t{}.s64 = {};", r(insn.operands[0]), int32_t(insn.operands[1] << 16));
+         break;
+ 
++    case PPC_INST_LVEHX:
+     case PPC_INST_LVEWX:
+     case PPC_INST_LVEWX128:
+     case PPC_INST_LVX:
+@@ -1208,6 +1396,12 @@ bool Recompiler::Recompile(
+         println("{}.u32));", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LWAUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int32_t(PPC_LOAD_U32({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LWBRX:
+         print("\t{}.u64 = __builtin_bswap32(PPC_LOAD_U32(", r(insn.operands[0]));
+         if (insn.operands[1] != 0)
+@@ -1229,7 +1423,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LWZU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U32({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LWZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U32({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LWZX:
+@@ -1267,8 +1467,9 @@ bool Recompiler::Recompile(
+         break;
+ 
+     case PPC_INST_MFTB:
+-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
+-        break;
++    case PPC_INST_MFTBL:
++    case PPC_INST_MFTBU:
++        return false; // Only the exact encoded TB/TBU forms above are supported.
+ 
+     case PPC_INST_MR:
+         println("\t{}.u64 = {}.u64;", r(insn.operands[0]), r(insn.operands[1]));
+@@ -1489,8 +1690,14 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_STBU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U8({}, {}.u8);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}({}, {}.u8);", mmioStore() ? "PPC_MM_STORE_U8" : "PPC_STORE_U8", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STBUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u8);", mmioStore() ? "PPC_MM_STORE_U8" : "PPC_STORE_U8", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STBX:
+@@ -1519,8 +1726,14 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_STDU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U64({}, {}.u64);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STDUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STDX:
+@@ -1546,6 +1759,20 @@ bool Recompiler::Recompile(
+         println("{}.u32, {}.u64);", r(insn.operands[2]), f(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STFDU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), f(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STFDUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), f(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STFIWX:
+         printSetFlushMode(false);
+         print("{}", mmioStore() ? "\tPPC_MM_STORE_U32(" : "\tPPC_STORE_U32(");
+@@ -1563,6 +1790,22 @@ bool Recompiler::Recompile(
+         println("{}, {}.u32);", int32_t(insn.operands[1]), temp());
+         break;
+ 
++    case PPC_INST_STFSU:
++        printSetFlushMode(false);
++        println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), temp());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STFSUX:
++        printSetFlushMode(false);
++        println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), temp());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STFSX:
+         printSetFlushMode(false);
+         println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
+@@ -1579,6 +1822,18 @@ bool Recompiler::Recompile(
+         println("{}, {}.u16);", int32_t(insn.operands[1]), r(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STHU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u16);", mmioStore() ? "PPC_MM_STORE_U16" : "PPC_STORE_U16", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STHUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u16);", mmioStore() ? "PPC_MM_STORE_U16" : "PPC_STORE_U16", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STHBRX:
+         print("{}", mmioStore() ? "\tPPC_MM_STORE_U16(" : "\tPPC_STORE_U16(");
+         if (insn.operands[1] != 0)
+@@ -1593,6 +1848,15 @@ bool Recompiler::Recompile(
+         println("{}.u32, {}.u16);", r(insn.operands[2]), r(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STVEBX:
++        // NOTE: accounting for the full vector reversal here.
++        print("\t{} = ", ea());
++        if (insn.operands[1] != 0)
++            print("{}.u32 + ", r(insn.operands[1]));
++        println("{}.u32;", r(insn.operands[2]));
++        println("\tPPC_STORE_U8({}, {}.u8[15 - ({} & 0xF)]);", ea(), v(insn.operands[0]), ea());
++        break;
++
+     case PPC_INST_STVEHX:
+         // TODO: vectorize
+         // NOTE: accounting for the full vector reversal here
+@@ -1675,13 +1939,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_STWU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}{}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32(" : "PPC_STORE_U32(", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
+         break;
+ 
+     case PPC_INST_STWUX:
+         println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U32({}, {}.u32);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[1]), ea());
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STWX:
+@@ -1712,6 +1976,20 @@ bool Recompiler::Recompile(
+             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
+         break;
+ 
++    case PPC_INST_SUBFZE:
++    case PPC_INST_SUBFZEO:
++        println("\t{}.u8 = ~{}.u32 + {}.ca < {}.ca;", temp(), r(insn.operands[1]), xer(), xer());
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = {}.ca && {}.s32 == INT32_MIN;", xer(), xer(), r(insn.operands[1]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = ~{}.u64 + {}.ca;", r(insn.operands[0]), r(insn.operands[1]), xer());
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_SUBFIC:
+         println("\t{}.ca = {}.u32 <= {};", xer(), r(insn.operands[1]), insn.operands[2]);
+         println("\t{}.s64 = {} - {}.s64;", r(insn.operands[0]), int32_t(insn.operands[2]), r(insn.operands[1]));
+@@ -1721,27 +1999,6 @@ bool Recompiler::Recompile(
+         // no op
+         break;
+ 
+-    case PPC_INST_TDLGEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TDLLEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TWI:
+-        // no op
+-        // println("__debugbreak();");
+-        break;
+-
+-    case PPC_INST_TWLGEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TWLLEI:
+-        // no op
+-        break;
+-
+     case PPC_INST_VADDFP:
+     case PPC_INST_VADDFP128:
+         printSetFlushMode(true);
+@@ -1840,7 +2097,15 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_VCMPBFP:
+     case PPC_INST_VCMPBFP128:
+-        println("\t__builtin_debugtrap();");
++        printSetFlushMode(true);
++        println("\tsimde_mm_store_ps({}.f32, simde_mm_or_ps(simde_mm_or_ps(simde_mm_and_ps(simde_mm_cmpgt_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))), simde_mm_and_ps(simde_mm_cmplt_ps(simde_mm_load_ps({}.f32), simde_mm_xor_ps(simde_mm_load_ps({}.f32), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000))))), simde_mm_castsi128_ps(simde_mm_set1_epi32(0x40000000)))), simde_mm_and_ps(simde_mm_cmpunord_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0xC0000000))))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[1]), v(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++        {
++            println("\t{}.lt = 0;", cr(6));
++            println("\t{}.gt = 0;", cr(6));
++            println("\t{}.eq = simde_mm_test_all_zeros(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32));", cr(6), v(insn.operands[0]), v(insn.operands[0]));
++            println("\t{}.so = 0;", cr(6));
++        }
+         break;
+ 
+     case PPC_INST_VCMPEQFP:
+@@ -1890,6 +2155,12 @@ bool Recompiler::Recompile(
+              println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u16), 0xFFFF);", cr(6), v(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_VCMPGTUW:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_cmpgt_epu32(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u32), 0xFFFF);", cr(6), v(insn.operands[0]));
++        break;
++
+     case PPC_INST_VEXPTEFP:
+     case PPC_INST_VEXPTEFP128:
+         // TODO: vectorize
+@@ -1977,6 +2248,11 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_ps({}.f32, simde_mm_xor_ps(simde_mm_sub_ps(simde_mm_mul_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[3]));
+         break;
+ 
++    case PPC_INST_VNOR:
++    case PPC_INST_VNOR128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_x_mm_not_si128(simde_mm_or_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VOR:
+     case PPC_INST_VOR128:
+         print("\tsimde_mm_store_si128((simde__m128i*){}.u8, ", v(insn.operands[0]));
+@@ -2008,21 +2284,69 @@ bool Recompiler::Recompile(
+     case PPC_INST_VPKD3D128:
+         // TODO: vectorize somehow?
+         // NOTE: handling vector reversal here too
+-        printSetFlushMode(true);
++        if (insn.operands[2] != 2 && insn.operands[2] != 4)
++            printSetFlushMode(true);
+         switch (insn.operands[2])
+         {
+-        case 0: // D3D color
+-            if (insn.operands[3] != 1 || insn.operands[4] != 3)
+-                fmt::println("Unexpected D3D color pack instruction at {:X}", base);
++        case 2: // NORMPACKED32: biased bits, saturated before masked lane merge.
++            if (insn.operands[3] >= 1 && insn.operands[3] <= 3 && insn.operands[4] <= 3)
++                println("\trecomp::vmx::packNormPacked32<{}, {}>({}.u32, {}.u32);", insn.operands[3], insn.operands[4], v(insn.operands[0]), v(insn.operands[1]));
++            else
++                println("\t__builtin_debugtrap();");
++            break;
++
++        case 4: // NORMSHORT4: saturated biased bits, host lanes W,Z,Y,X.
++            if (insn.operands[3] >= 1 && insn.operands[3] <= 3 && insn.operands[4] <= 3)
++                println("\trecomp::vmx::packNormShort4<{}, {}>({}.u32, {}.u32);", insn.operands[3], insn.operands[4], v(insn.operands[0]), v(insn.operands[1]));
++            else
++                println("\t__builtin_debugtrap();");
++            break;
+ 
++        case 3: // FLOAT16_2
++        case 5: // FLOAT16_4
++            if (insn.operands[3] >= 1 && insn.operands[3] <= 3 && insn.operands[4] <= 3)
++                println("\trecomp::vmx::packHalf<{}, {}, {}>({}.u32, {}.u32);", insn.operands[2] == 5 ? 4 : 2, insn.operands[3], insn.operands[4], v(insn.operands[0]), v(insn.operands[1]));
++            else
++                println("\t__builtin_debugtrap();");
++            break;
++
++        case 0: // D3D color
+             for (size_t i = 0; i < 4; i++)
+             {
+                 constexpr size_t indices[] = { 3, 0, 1, 2 };
+                 println("\t{}.u32[{}] = 0x404000FF;", vTemp(), i);
+-                println("\t{}.f32[{}] = {}.f32[{}] < 3.0f ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
++                // Clamp unordered inputs to the lower endpoint too. Packing
++                // an all-ones NaN is used to construct zero vector masks.
++                println("\t{}.f32[{}] = !({}.f32[{}] >= 3.0f) ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
+                 println("\t{}.u32 {}= uint32_t({}.u8[{}]) << {};", temp(), i == 0 ? "" : "|", vTemp(), i * 4, indices[i] * 8);
+             }
+-            println("\t{}.u32[3] = {}.u32;", v(insn.operands[0]), temp());
++
++            // The mask selects one or two 32-bit lanes, and the shift selects
++            // their destination. Vectors are fully reversed in host storage.
++            switch (insn.operands[3])
++            {
++            case 1:
++                println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
++                break;
++
++            case 2:
++            case 3:
++                if (insn.operands[3] == 3 && insn.operands[4] == 3)
++                {
++                    println("\t{}.u32[0] = 0;", v(insn.operands[0]));
++                }
++                else
++                {
++                    println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
++                    if (insn.operands[4] < 3)
++                        println("\t{}.u32[{}] = 0;", v(insn.operands[0]), insn.operands[4] + 1);
++                }
++                break;
++
++            default:
++                println("\t__builtin_debugtrap();");
++                break;
++            }
+             break;
+ 
+         default:
+@@ -2036,6 +2360,12 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_packus_epi16(simde_mm_load_si128((simde__m128i*){}.s16), simde_mm_load_si128((simde__m128i*){}.s16)));", v(insn.operands[0]), v(insn.operands[2]), v(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_VPKUWUS:
++    case PPC_INST_VPKUWUS128:
++        // VSCR[SAT] is not currently represented by PPCContext.
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vpkuwus(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VREFP:
+     case PPC_INST_VREFP128:
+         // TODO: see if we can use rcp safely
+@@ -2055,6 +2385,12 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_ps({}.f32, simde_mm_round_ps(simde_mm_load_ps({}.f32), SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC));", v(insn.operands[0]), v(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_VRFIP:
++    case PPC_INST_VRFIP128:
++        printSetFlushMode(true);
++        println("\tsimde_mm_store_ps({}.f32, simde_mm_round_ps(simde_mm_load_ps({}.f32), SIMDE_MM_FROUND_TO_POS_INF | SIMDE_MM_FROUND_NO_EXC));", v(insn.operands[0]), v(insn.operands[1]));
++        break;
++
+     case PPC_INST_VRFIZ:
+     case PPC_INST_VRFIZ128:
+         printSetFlushMode(true);
+@@ -2096,6 +2432,13 @@ bool Recompiler::Recompile(
+             println("\t{}.s8[{}] = {}.s8[{}] >> ({}.u8[{}] & 0x7);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[2]), i);
+         break;
+ 
++    case PPC_INST_VSRB:
++        // TODO: vectorize, ensure endianness is correct
++        for (size_t i = 0; i < 16; i++)
++            println("\t{}.u8[{}] = {}.u8[{}] >> ({}.u8[{}] & 0x7);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[2]), i);
++        println("\t{} = {};", v(insn.operands[0]), vTemp());
++        break;
++
+     case PPC_INST_VSRAH:
+         // TODO: vectorize, ensure endianness is correct
+         for (size_t i = 0; i < 8; i++)
+@@ -2120,10 +2463,13 @@ bool Recompiler::Recompile(
+             println("\t{}.u16[{}] = {}.u16[{}] << ({}.u8[{}] & 0xF);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[2]), i * 2);
+         break;
+ 
++    case PPC_INST_VSL:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsl(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VSLO:
+-        println("\t__debugbreak();");
+-        // println("\t{}.u8 = _mm_or_si128(_mm_slli_si128({}.u8, {}), simde_mm_srli_si128({}.u8, {}));",
+-        //     v(insn.operands[0]), v(insn.operands[1]), insn.operands[2], v(insn.operands[3]), 16 - insn.operands[2]);
++    case PPC_INST_VSLO128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vslo(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
+     case PPC_INST_VSUBSHS:
+@@ -2302,6 +2648,11 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsr(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_VSRO:
++    case PPC_INST_VSRO128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsro(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VSRAW:
+     case PPC_INST_VSRAW128:
+         // TODO: vectorize, ensure endianness is correct
+@@ -2339,11 +2690,35 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_sub_epi16(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_VSUBUWM:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u32, simde_mm_sub_epi32(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VUPKD3D128:
+         // TODO: vectorize somehow?
+         // NOTE: handling vector reversal here too
+         switch (insn.operands[2] >> 2)
+         {
++        case 2: // NORMPACKED32: biased signed XYZ and unsigned W, not SNORM floats.
++            for (size_t i = 0; i < 3; i++)
++            {
++                println("\t{}.u32 = ({}.u32[0] >> {}) & 0x3FFU;", temp(), v(insn.operands[1]), i * 10);
++                println("\t{}.u32[{}] = {}.u32 == 0x200U ? 0x7FC00000U : 0x40400000U + (({}.u32 ^ 0x200U) - 0x200U);", vTemp(), 3 - i, temp(), temp());
++            }
++            println("\t{}.u32[0] = 0x3F800000U + ({}.u32[0] >> 30);", vTemp(), v(insn.operands[1]));
++            // Snapshot all lanes in vTemp before writing a possibly aliased VD.
++            println("\t{} = {};", v(insn.operands[0]), vTemp());
++            break;
++
++        case 4: // NORMSHORT4: signed16 biased results, -32768 -> qNaN.
++            println("\trecomp::vmx::unpackNormShort4({}.u32, {}.u32);", v(insn.operands[0]), v(insn.operands[1]));
++            break;
++
++        case 3: // FLOAT16_2
++        case 5: // FLOAT16_4
++            println("\trecomp::vmx::unpackHalf<{}>({}.u32, {}.u32);", (insn.operands[2] >> 2) == 5 ? 4 : 2, v(insn.operands[0]), v(insn.operands[1]));
++            break;
++
+         case 0: // D3D color
+             for (size_t i = 0; i < 4; i++)
+             {
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+index 8beb23c..e17140a 100644
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -1,5 +1,29 @@
+ project("XenonTests")
+ 
++add_executable(XenonTranslationTests
++    "update_form_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonTranslationTests COMMAND XenonTranslationTests)
++
+ file(GLOB TEST_FILES *.cpp)
+ 
+ if(TEST_FILES)
+@@ -18,3 +42,88 @@ if(TEST_FILES)
+             "-Wno-unused-variable"
+     )
+ endif()
++
++add_executable(XenonCarryTranslationTests
++    "carry_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonCarryTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonCarryTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonCarryTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonCarryTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonCarryTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonCarryTranslationTests COMMAND XenonCarryTranslationTests)
++
++add_executable(XenonLowRiskTranslationTests
++    "low_risk_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonLowRiskTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonLowRiskTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonLowRiskTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonLowRiskTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonLowRiskTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonLowRiskTranslationTests COMMAND XenonLowRiskTranslationTests)
++
++add_executable(XenonExactVectorTranslationTests
++    "exact_vector_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonExactVectorTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonExactVectorTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonExactVectorTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonExactVectorTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonExactVectorTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonExactVectorTranslationTests COMMAND XenonExactVectorTranslationTests)
++
++add_executable(XenonTrapTranslationTests
++    "trap_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++target_include_directories(XenonTrapTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonTrapTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonTrapTranslationTests PRIVATE LibXenonAnalyse XenonUtils fmt::fmt tomlplusplus::tomlplusplus xxHash::xxhash)
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonTrapTranslationTests PRIVATE -Wno-switch -Wno-unused-variable -Wno-null-arithmetic)
++endif()
++target_compile_definitions(XenonTrapTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonTrapTranslationTests COMMAND XenonTrapTranslationTests)
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+index 668aeb1..1299ccc 100644
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -14,6 +14,151 @@
+ #include <cstdlib>
+ #include <cstring>
+ 
++namespace recomp::vmx {
++
++// VPACK_NORMSHORT4 uses biased float bits, not ordinary SNORM values.
++// Xenia 95a5c3ee PACK/UNPACK::EmitSHORT_4 and the corresponding XMM constants.
++constexpr std::uint32_t normShort4Component(std::uint32_t bits) {
++    constexpr std::uint32_t minimum = 0x403f8001u, maximum = 0x40407fffu;
++    if ((bits & 0x80000000u) || bits > 0x7f800000u || bits < minimum)
++        bits = minimum;
++    else if (bits > maximum)
++        bits = maximum;
++    return bits & 0xffffu;
++}
++
++template<unsigned Mask, unsigned Shift>
++inline void packNormShort4(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    static_assert(Mask >= 1 && Mask <= 3 && Shift <= 3);
++    const auto xy = (normShort4Component(src[3]) << 16) | normShort4Component(src[2]);
++    const auto zw = (normShort4Component(src[1]) << 16) | normShort4Component(src[0]);
++    if constexpr (Mask == 3 && Shift == 3) {
++        dst[0] = xy;
++    } else {
++        dst[Shift] = zw;
++        if constexpr (Mask != 1 && Shift < 3)
++            dst[Shift + 1] = xy;
++    }
++}
++
++inline void unpackNormShort4(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    // Snapshot both input words for VD == VB, with host lane order W,Z,Y,X.
++    const std::uint32_t fields[4] = {src[1] >> 16, src[1] & 0xffffu,
++                                    src[0] >> 16, src[0] & 0xffffu};
++    for (unsigned component = 0; component < 4; ++component) {
++        const auto bits = fields[component];
++        dst[3 - component] = bits == 0x8000u ? 0x7fc00000u :
++            0x40400000u + ((bits ^ 0x8000u) - 0x8000u);
++    }
++}
++
++// Clamp the positive biased float representation without changing host FP state.
++// Matches max(input, minimum) followed by min(result, maximum): unordered inputs
++// select the minimum, including signaling NaNs and negative NaNs.
++constexpr std::uint32_t clampNormPacked32Component(std::uint32_t bits,
++        std::uint32_t minimum, std::uint32_t maximum) {
++    if ((bits & 0x80000000u) || bits > 0x7f800000u || bits < minimum)
++        return minimum;
++    return bits > maximum ? maximum : bits;
++}
++
++// VPKD3D128 type2. Xenia 95a5c3ee PACK::EmitUINT_2101010 clamps XYZ to
++// 3.0 + [-511,511]*2^-22 and W to 3.0 + [0,3]*2^-22, then retains their
++// low bits. The packed word is replicated before the instruction's lane merge.
++template<unsigned Mask, unsigned Shift>
++inline void packNormPacked32(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    static_assert(Mask >= 1 && Mask <= 3 && Shift <= 3);
++    std::uint32_t packed = 0;
++    for (unsigned component = 0; component < 4; ++component) {
++        const auto minimum = component == 3 ? 0x40400000u : 0x403ffe01u;
++        const auto maximum = component == 3 ? 0x40400003u : 0x404001ffu;
++        const auto mask = component == 3 ? 3u : 1023u;
++        packed |= (clampNormPacked32Component(src[3 - component], minimum, maximum)
++                & mask) << (component * 10);
++    }
++    // Compute all components before writing VD, which may also be VB.
++    if constexpr (Mask == 3 && Shift == 3) {
++        dst[0] = packed;
++    } else {
++        dst[Shift] = packed;
++        if constexpr (Mask != 1 && Shift < 3)
++            dst[Shift + 1] = packed;
++    }
++}
++
++// Integer implementation of the F16C round-toward-zero behavior used by
++// Xenia's FLOAT16 pack backend. Independent of the host FP rounding/flush mode.
++constexpr std::uint16_t floatToHalfRtz(std::uint32_t bits) {
++    const auto sign = (bits >> 16) & 0x8000u;
++    const auto exponent = (bits >> 23) & 0xffu;
++    const auto fraction = bits & 0x7fffffu;
++    if (exponent == 255)
++        return static_cast<std::uint16_t>(sign | 0x7c00u |
++                (fraction ? (0x200u | (fraction >> 13)) : 0u));
++    if (exponent >= 143)
++        return static_cast<std::uint16_t>(sign | 0x7bffu);
++    if (exponent >= 113)
++        return static_cast<std::uint16_t>(sign | ((exponent - 112) << 10) |
++                (fraction >> 13));
++    if (exponent >= 103)
++        return static_cast<std::uint16_t>(sign |
++                ((0x800000u | fraction) >> (126 - exponent)));
++    return static_cast<std::uint16_t>(sign);
++}
++
++constexpr std::uint32_t halfToFloat(std::uint16_t bits) {
++    const auto sign = static_cast<std::uint32_t>(bits & 0x8000u) << 16;
++    auto exponent = static_cast<std::uint32_t>((bits >> 10) & 31u);
++    auto fraction = static_cast<std::uint32_t>(bits & 0x3ffu);
++    if (exponent == 31)
++        return sign | 0x7f800000u | (fraction << 13) |
++                (fraction ? 0x400000u : 0u);
++    if (exponent)
++        return sign | ((exponent + 112) << 23) | (fraction << 13);
++    if (!fraction)
++        return sign;
++    exponent = 113;
++    while (!(fraction & 0x400u)) {
++        fraction <<= 1;
++        --exponent;
++    }
++    return sign | (exponent << 23) | ((fraction & 0x3ffu) << 13);
++}
++
++// PPCVRegister host storage is W,Z,Y,X. Snapshot both packed words before
++// changing the destination, including when source and destination alias.
++template<unsigned Components, unsigned Mask, unsigned Shift>
++inline void packHalf(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    static_assert(Components == 2 || Components == 4);
++    static_assert(Mask >= 1 && Mask <= 3 && Shift <= 3);
++    const std::uint32_t xy = (std::uint32_t(floatToHalfRtz(src[3])) << 16) |
++            floatToHalfRtz(src[2]);
++    const std::uint32_t zw = (std::uint32_t(floatToHalfRtz(src[1])) << 16) |
++            floatToHalfRtz(src[0]);
++    const std::uint32_t low = Components == 4 ? zw : xy;
++    const std::uint32_t high = Components == 4 ? xy : 0;
++    if constexpr (Mask == 3 && Shift == 3) {
++        dst[0] = high;
++    } else {
++        dst[Shift] = low;
++        if constexpr (Mask != 1 && Shift < 3)
++            dst[Shift + 1] = high;
++    }
++}
++
++template<unsigned Components>
++inline void unpackHalf(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    static_assert(Components == 2 || Components == 4);
++    const auto xy = src[Components == 4 ? 1 : 0];
++    const auto zw = src[0];
++    dst[3] = halfToFloat(static_cast<std::uint16_t>(xy >> 16));
++    dst[2] = halfToFloat(static_cast<std::uint16_t>(xy));
++    dst[1] = Components == 4 ? halfToFloat(static_cast<std::uint16_t>(zw >> 16)) : 0;
++    dst[0] = Components == 4 ? halfToFloat(static_cast<std::uint16_t>(zw)) : 0x3f800000u;
++}
++
++} // namespace recomp::vmx
++
+ #include <x86/avx.h>
+ #include <x86/sse.h>
+ #include <x86/sse4.1.h>
+@@ -31,7 +176,38 @@
+ #define PPC_EXTERN_FUNC(x) extern PPC_FUNC(x)
+ #define PPC_WEAK_FUNC(x) __attribute__((weak,noinline)) PPC_FUNC(x)
+ 
+-#define PPC_FUNC_PROLOGUE() __builtin_assume(((size_t)base & 0x1F) == 0)
++
++#ifndef PPC_RUNTIME_CHECKPOINT
++#define PPC_RUNTIME_CHECKPOINT() ((void)0)
++#endif
++
++#ifndef PPC_RUNTIME_TRAP
++#define PPC_RUNTIME_TRAP() std::abort()
++#endif
++
++// Default compatibility is unchanged; runtimes may supply a normalized clock.
++#ifndef PPC_READ_TIMEBASE
++#define PPC_READ_TIMEBASE() __rdtsc()
++#endif
++
++template <typename T>
++inline bool PPCTrapCondition(uint32_t to, T a, T b)
++{
++    static_assert((sizeof(T) == 4 || sizeof(T) == 8) && T(-1) > T(0));
++    // Flipping the sign bit orders unsigned representations as signed values,
++    // without host signed overflow or implementation-defined narrowing casts.
++    constexpr T sign = T(1) << (sizeof(T) * CHAR_BIT - 1);
++    return ((to & 16) && (a ^ sign) < (b ^ sign))
++        || ((to & 8) && (a ^ sign) > (b ^ sign))
++        || ((to & 4) && a == b)
++        || ((to & 2) && a < b)
++        || ((to & 1) && a > b);
++}
++
++#define PPC_FUNC_PROLOGUE() do { \
++    __builtin_assume(((size_t)base & 0x1F) == 0); \
++    PPC_RUNTIME_CHECKPOINT(); \
++} while (false)
+ 
+ #ifndef PPC_LOAD_U8
+ #define PPC_LOAD_U8(x) *(volatile uint8_t*)(base + (x))
+@@ -257,7 +433,8 @@ struct PPCFPSCRRegister
+ 
+     inline void setcsr(uint32_t csr) noexcept
+     {
+-        __asm__ __volatile__("msr fpcr, %0" : : "r"(csr));
++        const uint64_t hostCsr = csr;
++        __asm__ __volatile__("msr fpcr, %0" : : "r"(hostCsr));
+     }
+ #else
+ #   error "Missing implementation for FPSCR."
+@@ -678,6 +855,30 @@ inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b)
+     return simde_mm_cmpgt_epi16(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
+ }
+ 
++inline simde__m128i simde_mm_cmpgt_epu32(simde__m128i a, simde__m128i b)
++{
++    simde__m128i c = simde_mm_set1_epi32(INT32_MIN);
++    return simde_mm_cmpgt_epi32(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
++}
++
++inline double ppc_frsqrte_compat(double value) noexcept
++{
++    // Power ISA permits implementation-dependent estimate bits. Returning the
++    // host-exact result preserves the required value classes and error bound,
++    // but does not reproduce Xenon's estimate table or FPSCR side effects.
++    return 1.0 / std::sqrt(value);
++}
++
++inline simde__m128i simde_mm_vpkuwus(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i maximum = simde_mm_set1_epi32(UINT16_MAX);
++    a = simde_mm_min_epu32(a, maximum);
++    b = simde_mm_min_epu32(b, maximum);
++
++    // Vector registers are fully reversed, so the host halves are packed B, A.
++    return simde_mm_packus_epi32(b, a);
++}
++
+ inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
+ {
+     simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);
+@@ -694,6 +895,51 @@ inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
+     return simde_mm_castps_si128(simde_mm_insert_ps(simde_mm_castsi128_ps(simde_mm_srl_epi64(a, b)), simde_mm_castsi128_ps(simde_mm_srl_epi64(simde_mm_srli_si128(a, 4), b)), 0x10));
+ }
+ 
++inline simde__m128i simde_mm_vsl(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const unsigned int amount = shift.u8[0] & 0x7;
++
++    // The architectural vector is fully reversed in host storage. The byte at
++    // index zero contains guest bits 120-127 and carry therefore comes from the
++    // preceding host byte.
++    for (size_t i = 0; i < 16; i++)
++    {
++        const unsigned int carry = i == 0 ? 0 : source.u8[i - 1] >> (8 - amount);
++        result.u8[i] = uint8_t((source.u8[i] << amount) | carry);
++    }
++
++    return simde__m128i_from_private(result);
++}
++
++inline simde__m128i simde_mm_vslo(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const size_t amount = (shift.u8[0] & 0x78) >> 3;
++
++    for (size_t i = 0; i < 16; i++)
++        result.u8[i] = i >= amount ? source.u8[i - amount] : 0;
++
++    return simde__m128i_from_private(result);
++}
++
++inline simde__m128i simde_mm_vsro(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const size_t amount = (shift.u8[0] & 0x78) >> 3;
++
++    for (size_t i = 0; i < 16; i++)
++        result.u8[i] = i + amount < 16 ? source.u8[i + amount] : 0;
++
++    return simde__m128i_from_private(result);
++}
++
+ inline simde__m128i simde_mm_vctuxs(simde__m128 src1)
+ {
+     simde__m128 xmm0 = simde_mm_max_ps(src1, simde_mm_set1_epi32(0));
+diff --git a/XenonUtils/xex.cpp b/XenonUtils/xex.cpp
+index 3845d69..45b3383 100644
+--- a/XenonUtils/xex.cpp
++++ b/XenonUtils/xex.cpp
+@@ -4,6 +4,7 @@
+ #include <cstring>
+ #include <vector>
+ #include <unordered_map>
++#include <string_view>
+ #include <aes.hpp>
+ 
+ #define STRINGIFY(X) #X
+@@ -233,8 +234,15 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
+             flags |= SectionFlags_Code;
+         }
+ 
+-        image.Map(reinterpret_cast<const char*>(section.Name), section.VirtualAddress, 
+-            section.Misc.VirtualSize, flags, image.data.get() + section.VirtualAddress);
++        size_t nameLength = 0;
++        while (nameLength < IMAGE_SIZEOF_SHORT_NAME && section.Name[nameLength] != 0)
++        {
++            ++nameLength;
++        }
++        const std::string_view name(
++            reinterpret_cast<const char*>(section.Name), nameLength);
++        image.Map(name, section.VirtualAddress, section.Misc.VirtualSize, flags,
++            image.data.get() + section.VirtualAddress);
+     }
+ 
+     auto* imports = reinterpret_cast<const Xex2ImportHeader*>(getOptHeaderPtr(data, XEX_HEADER_IMPORT_LIBRARIES));
+diff --git a/XenonTests/carry_recompiler.cc b/XenonTests/carry_recompiler.cc
+new file mode 100644
+index 0000000..81d3ca3
+--- /dev/null
++++ b/XenonTests/carry_recompiler.cc
+@@ -0,0 +1,136 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands,
++    uint32_t instructionBits = 0)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    instruction.instruction = instructionBits;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++
++void ExpectAbsent(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    for (const auto fragment : fragments)
++    {
++        if (output.find(fragment) != std::string::npos)
++        {
++            std::cerr << name << " unexpectedly emitted '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++    }
++}
++}
++
++int main()
++{
++    const auto addc = Translate(PPC_INST_ADDC, "addc", { 3, 3, 4 });
++    ExpectOrdered(
++        "addc alias",
++        addc,
++        { "temp.u8 = ctx.r3.u32 + ctx.r4.u32 < ctx.r3.u32;",
++          "ctx.r3.u64 = ctx.r3.u64 + ctx.r4.u64;",
++          "ctx.xer.ca = temp.u8;" });
++    ExpectAbsent("addc flags", addc, { "ctx.xer.ov", "ctx.cr0.compare" });
++
++    ExpectOrdered(
++        "addco record",
++        Translate(PPC_INST_ADDCO, "addco.", { 5, 3, 4 }, (1U << 10) | 1U),
++        { "temp.u8 = ctx.r3.u32 + ctx.r4.u32 < ctx.r3.u32;",
++          "ctx.xer.ov = ((~(ctx.r3.u32 ^ ctx.r4.u32)",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.r4.u64;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    ExpectOrdered(
++        "addme",
++        Translate(PPC_INST_ADDME, "addme", { 5, 3 }),
++        { "temp.u8 = (ctx.r3.u32 != 0) | ctx.xer.ca;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.xer.ca - 1;",
++          "ctx.xer.ca = temp.u8;" });
++
++    ExpectOrdered(
++        "addmeo record",
++        Translate(PPC_INST_ADDMEO, "addmeo.", { 5, 3 }, (1U << 10) | 1U),
++        { "temp.u8 = (ctx.r3.u32 != 0) | ctx.xer.ca;",
++          "ctx.xer.ov = !ctx.xer.ca && ctx.r3.s32 == INT32_MIN;",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.xer.ca - 1;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    ExpectOrdered(
++        "subfze",
++        Translate(PPC_INST_SUBFZE, "subfze", { 5, 3 }),
++        { "temp.u8 = ~ctx.r3.u32 + ctx.xer.ca < ctx.xer.ca;",
++          "ctx.r5.u64 = ~ctx.r3.u64 + ctx.xer.ca;",
++          "ctx.xer.ca = temp.u8;" });
++
++    ExpectOrdered(
++        "subfzeo record",
++        Translate(PPC_INST_SUBFZEO, "subfzeo.", { 5, 3 }, (1U << 10) | 1U),
++        { "temp.u8 = ~ctx.r3.u32 + ctx.xer.ca < ctx.xer.ca;",
++          "ctx.xer.ov = ctx.xer.ca && ctx.r3.s32 == INT32_MIN;",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ~ctx.r3.u64 + ctx.xer.ca;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    return 0;
++}
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+new file mode 100644
+index 0000000..494a6be
+--- /dev/null
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -0,0 +1,276 @@
++#include "../XenonRecomp/recompiler.h"
++
++namespace
++{
++int prologueCheckpointCount = 0;
++}
++
++#define PPC_CONFIG_H_INCLUDED
++#define PPC_RUNTIME_CHECKPOINT() (++prologueCheckpointCount)
++#include "../XenonUtils/ppc_context.h"
++
++#include <array>
++#include <cstdlib>
++#include <initializer_list>
++#include <iostream>
++#include <limits>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++
++template<typename T, size_t Size>
++simde__m128i FromGuestElements(const std::array<T, Size>& guest)
++{
++    static_assert(sizeof(T) * Size == 16);
++    std::array<T, Size> host{};
++    for (size_t i = 0; i < Size; i++)
++        host[Size - 1 - i] = guest[i];
++    return simde_mm_loadu_si128(reinterpret_cast<const simde__m128i*>(host.data()));
++}
++
++template<typename T, size_t Size>
++std::array<T, Size> ToGuestElements(simde__m128i value)
++{
++    static_assert(sizeof(T) * Size == 16);
++    std::array<T, Size> host{};
++    std::array<T, Size> guest{};
++    simde_mm_storeu_si128(reinterpret_cast<simde__m128i*>(host.data()), value);
++    for (size_t i = 0; i < Size; i++)
++        guest[i] = host[Size - 1 - i];
++    return guest;
++}
++
++template<typename T, size_t Size>
++void ExpectElements(
++    std::string_view name,
++    simde__m128i actual,
++    const std::array<T, Size>& expected)
++{
++    const auto result = ToGuestElements<T, Size>(actual);
++    if (result != expected)
++    {
++        std::cerr << name << " produced an incorrect vector\n";
++        std::exit(1);
++    }
++}
++}
++
++int main()
++{
++    alignas(32) std::array<uint8_t, 32> alignedStorage{};
++    auto* base = alignedStorage.data();
++    PPC_FUNC_PROLOGUE();
++    if (prologueCheckpointCount != 1)
++    {
++        std::cerr << "PPC_FUNC_PROLOGUE did not invoke the configured checkpoint\n";
++        return 1;
++    }
++
++    Translate(PPC_INST_VRFIP, "vrfip", { 4, 5 });
++    ExpectOrdered(
++        "vrfip128",
++        Translate(PPC_INST_VRFIP128, "vrfip128", { 40, 45 }),
++        { "ctx.fpscr.enableFlushMode();",
++          "simde_mm_round_ps(",
++          "ctx.v45.f32",
++          "SIMDE_MM_FROUND_TO_POS_INF | SIMDE_MM_FROUND_NO_EXC" });
++
++    Translate(PPC_INST_VPKUWUS, "vpkuwus", { 5, 3, 4 });
++    ExpectOrdered(
++        "vpkuwus128",
++        Translate(PPC_INST_VPKUWUS128, "vpkuwus128", { 50, 51, 52 }),
++        { "ctx.v50.u8", "simde_mm_vpkuwus(", "ctx.v51.u32", "ctx.v52.u32" });
++
++    ExpectOrdered(
++        "vsl",
++        Translate(PPC_INST_VSL, "vsl", { 5, 8, 0 }),
++        { "ctx.v5.u8", "simde_mm_vsl(", "ctx.v8.u8", "ctx.v0.u8" });
++
++    Translate(PPC_INST_VSLO, "vslo", { 5, 3, 4 });
++    ExpectOrdered(
++        "vslo128",
++        Translate(PPC_INST_VSLO128, "vslo128", { 8, 59, 0 }),
++        { "ctx.v8.u8", "simde_mm_vslo(", "ctx.v59.u8", "ctx.v0.u8" });
++
++    Translate(PPC_INST_VSRO, "vsro", { 5, 3, 4 });
++    ExpectOrdered(
++        "vsro128",
++        Translate(PPC_INST_VSRO128, "vsro128", { 9, 59, 0 }),
++        { "ctx.v9.u8", "simde_mm_vsro(", "ctx.v59.u8", "ctx.v0.u8" });
++
++    const std::array<uint8_t, 16> bytes{
++        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
++        0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
++    const auto source = FromGuestElements(bytes);
++    const auto byteShift = FromGuestElements(std::array<uint8_t, 16>{
++        8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 });
++    const auto twoByteShift = FromGuestElements(std::array<uint8_t, 16>{
++        0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12,
++        0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12 });
++
++    ExpectElements("vsl by zero bits", simde_mm_vsl(source, simde_mm_setzero_si128()), bytes);
++
++    ExpectElements(
++        "vsl by four bits",
++        simde_mm_vsl(source, FromGuestElements(std::array<uint8_t, 16>{
++            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 })),
++        std::array<uint8_t, 16>{
++            0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
++            0x89, 0x9A, 0xAB, 0xBC, 0xCD, 0xDE, 0xEF, 0xF0 });
++
++    ExpectElements(
++        "vslo by one byte",
++        simde_mm_vslo(source, byteShift),
++        std::array<uint8_t, 16>{
++            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
++            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00 });
++
++    ExpectElements(
++        "vsro by one byte",
++        simde_mm_vsro(source, byteShift),
++        std::array<uint8_t, 16>{
++            0x00, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
++            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE });
++
++    ExpectElements(
++        "vslo uses bits 121-124",
++        simde_mm_vslo(source, twoByteShift),
++        std::array<uint8_t, 16>{
++            0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
++            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x00 });
++
++    ExpectElements(
++        "vsro uses bits 121-124",
++        simde_mm_vsro(source, twoByteShift),
++        std::array<uint8_t, 16>{
++            0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
++            0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD });
++
++    const auto packed = simde_mm_vpkuwus(
++        FromGuestElements(std::array<uint32_t, 4>{
++            0x80000000u, 0x7FFFFFFFu, 2u, 3u }),
++        FromGuestElements(std::array<uint32_t, 4>{
++            0xFFFFFFFFu, 65538u, 0xFFFFFFFEu, 16u }));
++    ExpectElements(
++        "vpkuwus unsigned saturation",
++        packed,
++        std::array<uint16_t, 8>{
++            0xFFFF, 0xFFFF, 2, 3, 0xFFFF, 0xFFFF, 0xFFFF, 16 });
++
++    ExpectOrdered(
++        "vpkd3d128 unordered input clamps low",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 0 }),
++        { "!(ctx.v3.f32[0] >= 3.0f)", "!(ctx.v3.f32[3] >= 3.0f)" });
++
++    ExpectOrdered(
++        "vpkd3d128 mask1 shift0",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 0 }),
++        { "ctx.v4.u32[0] = temp.u32;" });
++    ExpectOrdered(
++        "vpkd3d128 mask1 shift2",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 2 }),
++        { "ctx.v4.u32[2] = temp.u32;" });
++    ExpectOrdered(
++        "vpkd3d128 mask2 shift1",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 2, 1 }),
++        { "ctx.v4.u32[1] = temp.u32;", "ctx.v4.u32[2] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask2 shift2",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 2, 2 }),
++        { "ctx.v4.u32[2] = temp.u32;", "ctx.v4.u32[3] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask3 shift0",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 3, 0 }),
++        { "ctx.v4.u32[0] = temp.u32;", "ctx.v4.u32[1] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask3 shift3",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 3, 3 }),
++        { "ctx.v4.u32[0] = 0;" });
++
++    ExpectOrdered(
++        "vcmpbfp128 record",
++        Translate(PPC_INST_VCMPBFP128, "vcmpbfp128.", { 5, 3, 4 }),
++        { "simde_mm_cmpgt_ps(",
++          "ctx.v3.f32",
++          "ctx.v4.f32",
++          "simde_mm_cmplt_ps(",
++          "simde_mm_cmpunord_ps(",
++          "ctx.cr6.lt = 0;",
++          "ctx.cr6.gt = 0;",
++          "ctx.cr6.eq = simde_mm_test_all_zeros(",
++          "ctx.v5.u32",
++          "ctx.cr6.so = 0;" });
++
++    ExpectOrdered(
++        "frsqrte compatibility",
++        Translate(PPC_INST_FRSQRTE, "frsqrte", { 4, 5 }),
++        { "ctx.fpscr.disableFlushMode();",
++          "ctx.f4.f64 = ppc_frsqrte_compat(ctx.f5.f64);" });
++
++    if (ppc_frsqrte_compat(4.0) != 0.5 ||
++        !std::isinf(ppc_frsqrte_compat(0.0)) ||
++        std::signbit(ppc_frsqrte_compat(0.0)) ||
++        !std::isinf(ppc_frsqrte_compat(-0.0)) ||
++        !std::signbit(ppc_frsqrte_compat(-0.0)) ||
++        ppc_frsqrte_compat(std::numeric_limits<double>::infinity()) != 0.0 ||
++        !std::isnan(ppc_frsqrte_compat(-1.0)) ||
++        !std::isnan(ppc_frsqrte_compat(std::numeric_limits<double>::quiet_NaN())))
++    {
++        std::cerr << "frsqrte compatibility value classes are incorrect\n";
++        return 1;
++    }
++
++    return 0;
++}
+diff --git a/XenonTests/low_risk_recompiler.cc b/XenonTests/low_risk_recompiler.cc
+new file mode 100644
+index 0000000..7366b89
+--- /dev/null
++++ b/XenonTests/low_risk_recompiler.cc
+@@ -0,0 +1,110 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++}
++
++int main()
++{
++    Translate(PPC_INST_DCBST, "dcbst", { 3, 4 });
++
++    ExpectOrdered(
++        "vnor128",
++        Translate(PPC_INST_VNOR128, "vnor128", { 5, 3, 4 }),
++        { "simde_x_mm_not_si128(",
++          "simde_mm_or_si128(",
++          "ctx.v3.u8",
++          "ctx.v4.u8" });
++
++    ExpectOrdered(
++        "vcmpgtuw record",
++        Translate(PPC_INST_VCMPGTUW, "vcmpgtuw.", { 5, 3, 4 }),
++        { "simde_mm_cmpgt_epu32(",
++          "ctx.v3.u32",
++          "ctx.v4.u32",
++          "ctx.cr6.setFromMask(",
++          "ctx.v5.u32",
++          "0xFFFF" });
++
++    ExpectOrdered(
++        "vsubuwm",
++        Translate(PPC_INST_VSUBUWM, "vsubuwm", { 5, 3, 4 }),
++        { "simde_mm_sub_epi32(", "ctx.v3.u32", "ctx.v4.u32" });
++
++    ExpectOrdered(
++        "vsrb alias",
++        Translate(PPC_INST_VSRB, "vsrb", { 3, 3, 4 }),
++        { "vTemp.u8[0] = ctx.v3.u8[0] >> (ctx.v4.u8[0] & 0x7);",
++          "vTemp.u8[15] = ctx.v3.u8[15] >> (ctx.v4.u8[15] & 0x7);",
++          "ctx.v3 = vTemp;" });
++
++    ExpectOrdered(
++        "lvehx",
++        Translate(PPC_INST_LVEHX, "lvehx", { 5, 3, 4 }),
++        { "simde_mm_load_si128((simde__m128i*)(base + ((ctx.r3.u32 + ctx.r4.u32) & ~0xF)))",
++          "VectorMaskL" });
++
++    ExpectOrdered(
++        "stvebx",
++        Translate(PPC_INST_STVEBX, "stvebx", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "PPC_STORE_U8(ea, ctx.v5.u8[15 - (ea & 0xF)]);" });
++
++    return 0;
++}
+diff --git a/XenonTests/trap_recompiler.cc b/XenonTests/trap_recompiler.cc
+new file mode 100644
+index 0000000..d190253
+--- /dev/null
++++ b/XenonTests/trap_recompiler.cc
+@@ -0,0 +1,73 @@
++#include "../XenonRecomp/recompiler.h"
++
++namespace { int trapCount = 0; int timebaseReads = 0; }
++#define PPC_CONFIG_H_INCLUDED
++#define PPC_RUNTIME_TRAP() (++trapCount)
++#define PPC_READ_TIMEBASE() (++timebaseReads, 0xFEDCBA9876543210ULL)
++#include "../XenonUtils/ppc_context.h"
++
++#include <array>
++#include <iostream>
++#include <string_view>
++
++namespace {
++void Require(bool value, const char* message) {
++    if (!value) { std::cerr << message << '\n'; std::exit(1); }
++}
++std::string Translate(uint32_t encoded) {
++    Recompiler r;
++    Function fn{0x1000, 8};
++    std::array<uint32_t, 2> words{ByteSwap(encoded), 0};
++    ppc_insn insn{};
++    ppc::Disassemble(words.data(), 4, fn.base, insn);
++    Require(insn.opcode != nullptr, "trap encoding did not disassemble");
++    auto table = r.config.switchTables.end();
++    RecompilerLocalVariables locals;
++    CSRState csr = CSRState::Unknown;
++    Require(r.Recompile(fn, fn.base, insn, words.data(), table, locals, csr), "trap did not translate");
++    return r.out;
++}
++void Contains(uint32_t encoded, std::string_view fragment) {
++    const auto text = Translate(encoded);
++    if (text.find(fragment) == std::string::npos) { std::cerr << text; std::exit(1); }
++}
++template <typename U, typename S> void CheckConditions() {
++    const std::array<U, 7> values{0, 1, 2, U(-1), U(-2), U(1) << (sizeof(U)*8-1), (U(1) << (sizeof(U)*8-1))-1};
++    for (uint32_t to = 0; to < 32; ++to) {
++        for (const auto a : values) for (const auto b : values) {
++            S sa, sb;
++            std::memcpy(&sa, &a, sizeof(a)); std::memcpy(&sb, &b, sizeof(b));
++            const bool expected = ((to&16) && sa<sb) || ((to&8) && sa>sb) || ((to&4) && a==b)
++                || ((to&2) && a<b) || ((to&1) && a>b);
++            Require(PPCTrapCondition<U>(to,a,b) == expected, "trap comparison mismatch");
++        }
++    }
++}
++}
++int main() {
++    Require(PPC_READ_TIMEBASE() == 0xFEDCBA9876543210ULL && timebaseReads == 1,
++        "configured timebase must be called once and retain all bits");
++    for (uint32_t rt = 0; rt < 32; ++rt) {
++        for (const uint32_t xo : {339U, 371U}) {
++            for (const uint32_t selector : {268U, 269U}) {
++                const uint32_t word = (31U << 26) | (rt << 21)
++                    | ((selector & 31) << 16) | ((selector & 0x3E0) << 6) | (xo << 1);
++                Contains(word, fmt::format("ctx.r{}.u64 = uint64_t(PPC_READ_TIMEBASE()){};",
++                    rt, selector == 269 ? " >> 32" : ""));
++                Require(Translate(word).find("__rdtsc") == std::string::npos,
++                    "timebase read bypassed runtime hook");
++            }
++        }
++    }
++    Contains((3U<<26)|(31U<<21)|22U, "PPC_RUNTIME_TRAP();");
++    Contains((3U<<26)|(16U<<21)|0xFFFFU, "PPCTrapCondition<uint32_t>(16, ctx.r0.u32, 0xFFFFFFFFU)");
++    Contains((2U<<26)|(5U<<21)|(3U<<16)|0xFFFFU, "PPCTrapCondition<uint64_t>(5, ctx.r3.u64, 0xFFFFFFFFFFFFFFFFULL)");
++    Contains((31U<<26)|(4U<<21)|(3U<<16)|(4U<<11)|(4U<<1), "PPCTrapCondition<uint32_t>(4, ctx.r3.u32, ctx.r4.u32)");
++    Contains((31U<<26)|(1U<<21)|(3U<<16)|(4U<<11)|(68U<<1), "PPCTrapCondition<uint64_t>(1, ctx.r3.u64, ctx.r4.u64)");
++    Contains((31U<<26)|(31U<<21)|(4U<<1), "PPC_RUNTIME_TRAP();");
++    Contains((3U<<26)|(3U<<16)|0x7FFFU, "PPCTrapCondition<uint32_t>(0, ctx.r3.u32, 0x7FFFU)");
++    CheckConditions<uint32_t, int32_t>(); CheckConditions<uint64_t, int64_t>();
++    if (PPCTrapCondition<uint32_t>(4, 1, 1)) PPC_RUNTIME_TRAP();
++    if (PPCTrapCondition<uint32_t>(4, 1, 2)) PPC_RUNTIME_TRAP();
++    Require(trapCount == 1, "trap hook count mismatch");
++}
+diff --git a/XenonTests/update_form_recompiler.cc b/XenonTests/update_form_recompiler.cc
+new file mode 100644
+index 0000000..3ec9262
+--- /dev/null
++++ b/XenonTests/update_form_recompiler.cc
+@@ -0,0 +1,168 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    if (instructionId == PPC_INST_BCTR)
++    {
++        recompiler.config.switchTables.emplace(0x1000, RecompilerSwitchTable{11, {0x1004}});
++        switchTable = recompiler.config.switchTables.begin();
++    }
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++}
++
++int main()
++{
++    ExpectOrdered(
++        "word switch selector",
++        Translate(PPC_INST_BCTR, "bctr", {}),
++        { "switch (ctx.r11.u32)", "case 0:", "if (ctx.ctr.u32 != 0x1004U)",
++          "PPC_CALL_INDIRECT_FUNC(ctx.ctr.u32); return;", "goto loc_1004;",
++          "default:", "PPC_CALL_INDIRECT_FUNC(ctx.ctr.u32); return;" });
++
++    ExpectOrdered(
++        "stfsu",
++        Translate(PPC_INST_STFSU, "stfsu", { 1, uint32_t(-16), 3 }),
++        { "temp.f32 = float(ctx.f1.f64);",
++          "ea = -16 + ctx.r3.u32;",
++          "PPC_STORE_U32(ea, temp.u32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lfsu",
++        Translate(PPC_INST_LFSU, "lfsu", { 1, 12, 3 }),
++        { "ea = 12 + ctx.r3.u32;",
++          "temp.u32 = PPC_LOAD_U32(ea);",
++          "ctx.f1.f64 = double(temp.f32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lhzu",
++        Translate(PPC_INST_LHZU, "lhzu", { 5, uint32_t(-2), 3 }),
++        { "ea = -2 + ctx.r3.u32;",
++          "ctx.r5.u64 = PPC_LOAD_U16(ea);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "sthu",
++        Translate(PPC_INST_STHU, "sthu", { 5, 2, 3 }),
++        { "ea = 2 + ctx.r3.u32;",
++          "PPC_STORE_U16(ea, ctx.r5.u16);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lfsux",
++        Translate(PPC_INST_LFSUX, "lfsux", { 1, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "temp.u32 = PPC_LOAD_U32(ea);",
++          "ctx.f1.f64 = double(temp.f32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lhzux",
++        Translate(PPC_INST_LHZUX, "lhzux", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "ctx.r5.u64 = PPC_LOAD_U16(ea);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lwaux",
++        Translate(PPC_INST_LWAUX, "lwaux", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "ctx.r5.s64 = int32_t(PPC_LOAD_U32(ea));",
++          "ctx.r3.u64 = ea;" });
++
++    // A store whose source and update register are the same must read the old
++    // source value before architectural writeback of the effective address.
++    ExpectOrdered(
++        "stbux alias",
++        Translate(PPC_INST_STBUX, "stbux", { 3, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "PPC_STORE_U8(ea, ctx.r3.u8);",
++          "ctx.r3.u64 = ea;" });
++
++    struct CoverageCase
++    {
++        int id;
++        const char* name;
++        std::array<uint32_t, 3> operands;
++    };
++    constexpr CoverageCase coverage[] = {
++        { PPC_INST_LBZUX, "lbzux", { 5, 3, 4 } },
++        { PPC_INST_LDUX, "ldux", { 5, 3, 4 } },
++        { PPC_INST_LFDU, "lfdu", { 1, 8, 3 } },
++        { PPC_INST_LFDUX, "lfdux", { 1, 3, 4 } },
++        { PPC_INST_LHAU, "lhau", { 5, 2, 3 } },
++        { PPC_INST_LHAUX, "lhaux", { 5, 3, 4 } },
++        { PPC_INST_LWZUX, "lwzux", { 5, 3, 4 } },
++        { PPC_INST_STDUX, "stdux", { 5, 3, 4 } },
++        { PPC_INST_STFDU, "stfdu", { 1, 8, 3 } },
++        { PPC_INST_STFDUX, "stfdux", { 1, 3, 4 } },
++        { PPC_INST_STFSUX, "stfsux", { 1, 3, 4 } },
++        { PPC_INST_STHUX, "sthux", { 5, 3, 4 } },
++    };
++    for (const auto& test : coverage)
++    {
++        const auto output = Translate(
++            test.id,
++            test.name,
++            { test.operands[0], test.operands[1], test.operands[2] });
++        ExpectOrdered(test.name, output, { ".u64 = ea;" });
++    }
++
++    return 0;
++}

@@ -1,0 +1,15 @@
+name: Content report
+description: Report material that must not be in this repository or a download (game content, a key, personal data).
+labels: [content-report]
+body:
+  - type: markdown
+    attributes:
+      value: "**Do not attach, paste or quote the material.** Name where it is; we will find it."
+  - type: input
+    id: where
+    attributes: {label: Where, description: "File and line, or download name and the file inside it", placeholder: "tools/example.py:42"}
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes: {label: What kind of material it is and why it should not be here}
+    validations: {required: true}

@@ -1,0 +1,39 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -608,7 +608,7 @@
+     case PPC_INST_BCTR:
+         if (switchTable != config.switchTables.end())
+         {
+-            println("\tswitch ({}.u64) {{", r(switchTable->second.r));
++            println("\tswitch ({}.u32) {{", r(switchTable->second.r));
+ 
+             for (size_t i = 0; i < switchTable->second.labels.size(); i++)
+             {
+diff --git a/XenonTests/update_form_recompiler.cc b/XenonTests/update_form_recompiler.cc
+--- a/XenonTests/update_form_recompiler.cc
++++ b/XenonTests/update_form_recompiler.cc
+@@ -26,6 +26,11 @@
+ 
+     std::array<uint32_t, 2> data{};
+     auto switchTable = recompiler.config.switchTables.end();
++    if (instructionId == PPC_INST_BCTR)
++    {
++        recompiler.config.switchTables.emplace(0x1000, RecompilerSwitchTable{11, {0x1004}});
++        switchTable = recompiler.config.switchTables.begin();
++    }
+     RecompilerLocalVariables localVariables;
+     CSRState csrState = CSRState::Unknown;
+     if (!recompiler.Recompile(
+@@ -63,6 +68,11 @@
+ int main()
+ {
++    ExpectOrdered(
++        "word switch selector",
++        Translate(PPC_INST_BCTR, "bctr", {}),
++        { "switch (ctx.r11.u32)", "case 0:", "goto loc_1004;" });
++
+     ExpectOrdered(
+         "stfsu",
+         Translate(PPC_INST_STFSU, "stfsu", { 1, uint32_t(-16), 3 }),
+         { "temp.f32 = float(ctx.f1.f64);",

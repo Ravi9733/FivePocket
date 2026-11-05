@@ -1,0 +1,220 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ad9a1db..3f26648 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -4,7 +4,13 @@ set(CMAKE_CXX_STANDARD 17)
+ 
+ project("XenosRecomp-ALL")
+ 
++include(CTest)
++
+ set(XENOS_RECOMP_THIRDPARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty")
+ 
+ add_subdirectory(${XENOS_RECOMP_THIRDPARTY_ROOT})
+ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/XenosRecomp")
++
++if (BUILD_TESTING)
++    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/XenosTests")
++endif()
+diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
+index a8b87a6..538c0ae 100644
+--- a/XenosRecomp/main.cpp
++++ b/XenosRecomp/main.cpp
+@@ -3,6 +3,7 @@
+ #include <thread>
+ 
+ #include "shader.h"
++#include "shader_container_scan.h"
+ #include "shader_recompiler.h"
+ #include "dxc_compiler.h"
+ 
+@@ -126,17 +127,13 @@ int main(int argc, char** argv)
+             auto fileData = readAllBytes(file.path().string().c_str(), fileSize);
+             bool foundAny = false;
+ 
+-            for (size_t i = 0; fileSize > sizeof(ShaderContainer) && i < fileSize - sizeof(ShaderContainer) - 1;)
++            for (size_t i = 0; i < fileSize;)
+             {
+-                auto shaderContainer = reinterpret_cast<const ShaderContainer*>(fileData.get() + i);
+-                size_t dataSize = shaderContainer->virtualSize + shaderContainer->physicalSize;
++                size_t dataSize = 0;
+ 
+-                if ((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100 &&
+-                    dataSize <= (fileSize - i) &&
+-                    shaderContainer->field1C == 0 &&
+-                    shaderContainer->field20 == 0)
++                if (TryGetXenosShaderContainerSize(fileData.get() + i, fileSize - i, dataSize))
+                 {
+-                    XXH64_hash_t hash = XXH3_64bits(shaderContainer, dataSize);
++                    XXH64_hash_t hash = XXH3_64bits(fileData.get() + i, dataSize);
+                     auto shader = shaders.try_emplace(hash);
+                     if (shader.second)
+                     {
+@@ -289,7 +286,15 @@ int main(int argc, char** argv)
+     {
+         ShaderRecompiler recompiler;
+         size_t fileSize;
+-        recompiler.recompile(readAllBytes(input, fileSize).get(), include);
++        auto fileData = readAllBytes(input, fileSize);
++        size_t containerSize = 0;
++        if (!TryGetXenosShaderContainerSize(fileData.get(), fileSize, containerSize) ||
++            containerSize != fileSize)
++        {
++            fmt::println(stderr, "Input is not one complete bounded Xenos shader container.");
++            return 1;
++        }
++        recompiler.recompile(fileData.get(), include);
+         writeAllBytes(output, recompiler.out.data(), recompiler.out.size());
+     }
+ 
+diff --git a/XenosRecomp/shader_container_scan.h b/XenosRecomp/shader_container_scan.h
+new file mode 100644
+index 0000000..06792ed
+--- /dev/null
++++ b/XenosRecomp/shader_container_scan.h
+@@ -0,0 +1,46 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <limits>
++
++inline constexpr size_t XENOS_SHADER_CONTAINER_HEADER_SIZE = 36;
++inline constexpr uint32_t XENOS_SHADER_CONTAINER_FLAGS_MASK = 0xFFFFFF00;
++inline constexpr uint32_t XENOS_SHADER_CONTAINER_FLAGS_MAGIC = 0x102A1100;
++
++inline uint32_t ReadXenosBigEndian32(const uint8_t* data)
++{
++    return (uint32_t(data[0]) << 24) |
++        (uint32_t(data[1]) << 16) |
++        (uint32_t(data[2]) << 8) |
++        uint32_t(data[3]);
++}
++
++inline bool TryGetXenosShaderContainerSize(
++    const uint8_t* data,
++    size_t availableSize,
++    size_t& containerSize)
++{
++    containerSize = 0;
++    if (data == nullptr || availableSize < XENOS_SHADER_CONTAINER_HEADER_SIZE)
++        return false;
++
++    const uint32_t flags = ReadXenosBigEndian32(data);
++    if ((flags & XENOS_SHADER_CONTAINER_FLAGS_MASK) != XENOS_SHADER_CONTAINER_FLAGS_MAGIC)
++        return false;
++
++    const uint32_t virtualSize = ReadXenosBigEndian32(data + 4);
++    const uint32_t physicalSize = ReadXenosBigEndian32(data + 8);
++    if (physicalSize > std::numeric_limits<uint32_t>::max() - virtualSize)
++        return false;
++
++    const uint32_t combinedSize = virtualSize + physicalSize;
++    if (combinedSize < XENOS_SHADER_CONTAINER_HEADER_SIZE || combinedSize > availableSize)
++        return false;
++
++    if (ReadXenosBigEndian32(data + 28) != 0 || ReadXenosBigEndian32(data + 32) != 0)
++        return false;
++
++    containerSize = combinedSize;
++    return true;
++}
+diff --git a/XenosTests/CMakeLists.txt b/XenosTests/CMakeLists.txt
+new file mode 100644
+index 0000000..fb0104b
+--- /dev/null
++++ b/XenosTests/CMakeLists.txt
+@@ -0,0 +1,4 @@
++add_executable(XenosShaderContainerScanTests shader_container_scan_test.cpp)
++target_include_directories(XenosShaderContainerScanTests PRIVATE
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
++add_test(NAME XenosShaderContainerScanTests COMMAND XenosShaderContainerScanTests)
+diff --git a/XenosTests/shader_container_scan_test.cpp b/XenosTests/shader_container_scan_test.cpp
+new file mode 100644
+index 0000000..8008066
+--- /dev/null
++++ b/XenosTests/shader_container_scan_test.cpp
+@@ -0,0 +1,83 @@
++#include "shader_container_scan.h"
++
++#include <array>
++#include <cstdlib>
++#include <iostream>
++#include <limits>
++
++namespace
++{
++void WriteBigEndian32(uint8_t* output, uint32_t value)
++{
++    output[0] = uint8_t(value >> 24);
++    output[1] = uint8_t(value >> 16);
++    output[2] = uint8_t(value >> 8);
++    output[3] = uint8_t(value);
++}
++
++std::array<uint8_t, 64> ValidContainer()
++{
++    std::array<uint8_t, 64> data{};
++    WriteBigEndian32(data.data(), XENOS_SHADER_CONTAINER_FLAGS_MAGIC | 1);
++    WriteBigEndian32(data.data() + 4, 48);
++    WriteBigEndian32(data.data() + 8, 16);
++    return data;
++}
++
++void Require(bool condition, const char* message)
++{
++    if (!condition)
++    {
++        std::cerr << message << '\n';
++        std::exit(1);
++    }
++}
++}
++
++int main()
++{
++    size_t size = 123;
++    auto valid = ValidContainer();
++    Require(
++        TryGetXenosShaderContainerSize(valid.data(), valid.size(), size) && size == valid.size(),
++        "exact bounded container was rejected");
++
++    Require(
++        !TryGetXenosShaderContainerSize(valid.data(), 35, size) && size == 0,
++        "truncated header was accepted");
++
++    auto wrongMagic = valid;
++    wrongMagic[0] = 0;
++    Require(
++        !TryGetXenosShaderContainerSize(wrongMagic.data(), wrongMagic.size(), size),
++        "wrong magic was accepted");
++
++    auto zeroSize = valid;
++    WriteBigEndian32(zeroSize.data() + 4, 0);
++    WriteBigEndian32(zeroSize.data() + 8, 0);
++    Require(
++        !TryGetXenosShaderContainerSize(zeroSize.data(), zeroSize.size(), size),
++        "zero-size candidate was accepted");
++
++    auto overflow = valid;
++    WriteBigEndian32(overflow.data() + 4, std::numeric_limits<uint32_t>::max());
++    WriteBigEndian32(overflow.data() + 8, 1);
++    Require(
++        !TryGetXenosShaderContainerSize(overflow.data(), overflow.size(), size),
++        "uint32 size overflow was accepted");
++
++    auto outsideInput = valid;
++    WriteBigEndian32(outsideInput.data() + 4, 64);
++    WriteBigEndian32(outsideInput.data() + 8, 4);
++    Require(
++        !TryGetXenosShaderContainerSize(outsideInput.data(), outsideInput.size(), size),
++        "container extent outside input was accepted");
++
++    auto reserved = valid;
++    WriteBigEndian32(reserved.data() + 28, 1);
++    Require(
++        !TryGetXenosShaderContainerSize(reserved.data(), reserved.size(), size),
++        "nonzero reserved field was accepted");
++
++    return 0;
++}

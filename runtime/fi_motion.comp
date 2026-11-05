@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Pass 2: coarse block matching at quarter res, one invocation per (8x8 block, candidate in [-r, r]^2); SAD of cur(p)
+// vs prev(p + d) plus penalty * |d|; the best per block by atomicMin(cost << 11 | candidate).
+layout(local_size_x = 64) in;
+#include "fi_common.glsl"
+void main() {
+    int side = 2 * pc.radius + 1; uint candidates = uint(side * side);
+    uint block = gl_GlobalInvocationID.x / candidates, cand = gl_GlobalInvocationID.x % candidates;
+    if (block >= uint(pc.blocks.x * pc.blocks.y)) return;
+    ivec2 b = ivec2(int(block) % pc.blocks.x, int(block) / pc.blocks.x);
+    ivec2 d = ivec2(int(cand) % side, int(cand) / side) - pc.radius;
+    float sad = 0.0;
+    for (int y = 0; y < 8; ++y) for (int x = 0; x < 8; ++x) {
+        ivec2 p = min(b * 8 + ivec2(x, y), pc.quarter - 1);
+        sad += abs(imageLoad(curLuma, p).r - imageLoad(prevLuma, clamp(p + d, ivec2(0), pc.quarter - 1)).r);
+    }
+    float cost = sad * 255.0 + pc.penalty * float(abs(d.x) + abs(d.y));
+    atomicMin(coarse[block], (min(uint(cost * 8.0), 2097151u) << 11) | cand);
+}

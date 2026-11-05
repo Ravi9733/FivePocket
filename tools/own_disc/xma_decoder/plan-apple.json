@@ -1,0 +1,984 @@
+{
+ "schema": "xma-decoder-plan/1",
+ "what": "How the XMA decoder libraries are built from FFmpeg for iOS (arm64-apple-ios17.4): the commands FFmpeg's own make runs for the configuration in configured-apple/config.h, taken from its dry run, without the target and SDK options (the stage adds those of the Xcode it runs with). Made by a private authoring script; nothing here comes from the game. 'expect' holds the libraries' hashes from the first machine's Xcode.",
+ "revision": "15ece0882e8d5875051ff5b73c5a8326f7cee9f5",
+ "source": "https://github.com/xenia-project/FFmpeg",
+ "source_archive_sha256": "af4987fc674d316ef59b49a263f7cf63d01b639b744acbe42b21aaab81708116",
+ "target": "arm64-apple-ios17.4",
+ "configured": {
+  "config.h": "e2b6fcc34eee596da58bf70c8b3ce81763132720e2faa374225d312bfec265ff",
+  "libavcodec/codec_list.c": "9530f4bd6dc21f6bfcb5213f4e31fc22c2aa6bcbe158ce3810bd27f42611e674",
+  "libavcodec/parser_list.c": "7caec24c4a867728d1efaf87f8f8e31385a677b3d5c7eb9983068134a5da45c2",
+  "libavutil/ffversion.h": "250189395fa1eb5648f694e943e9356e4b092dd73af05f10910243f6b580959d"
+ },
+ "flag_sets": [
+  [
+   "-I.",
+   "-I./",
+   "-D_ISOC99_SOURCE",
+   "-D_FILE_OFFSET_BITS=64",
+   "-D_LARGEFILE_SOURCE",
+   "-I./compat/dispatch_semaphore",
+   "-DPIC",
+   "-DHAVE_AV_CONFIG_H",
+   "-DBUILDING_avcodec",
+   "-O2",
+   "-fno-strict-aliasing",
+   "-ffp-model=strict",
+   "-fwrapv",
+   "-std=c11",
+   "-Werror=partial-availability",
+   "-fomit-frame-pointer",
+   "-fPIC",
+   "-pthread",
+   "-Wdeclaration-after-statement",
+   "-Wall",
+   "-Wdisabled-optimization",
+   "-Wpointer-arith",
+   "-Wredundant-decls",
+   "-Wwrite-strings",
+   "-Wtype-limits",
+   "-Wundef",
+   "-Wmissing-prototypes",
+   "-Wno-pointer-to-int-cast",
+   "-Wstrict-prototypes",
+   "-Wempty-body",
+   "-Wno-parentheses",
+   "-Wno-switch",
+   "-Wno-format-zero-length",
+   "-Wno-pointer-sign",
+   "-Wno-unused-const-variable",
+   "-Wno-bool-operation",
+   "-Wno-char-subscripts",
+   "-Oz",
+   "-fno-math-errno",
+   "-fno-signed-zeros",
+   "-mstack-alignment=16",
+   "-Qunused-arguments",
+   "-Werror=implicit-function-declaration",
+   "-Werror=missing-prototypes",
+   "-Werror=return-type"
+  ],
+  [
+   "-I.",
+   "-I./",
+   "-D_ISOC99_SOURCE",
+   "-D_FILE_OFFSET_BITS=64",
+   "-D_LARGEFILE_SOURCE",
+   "-I./compat/dispatch_semaphore",
+   "-DPIC",
+   "-O2",
+   "-fno-strict-aliasing",
+   "-ffp-model=strict",
+   "-fwrapv",
+   "-fPIC",
+   "-Qunused-arguments"
+  ],
+  [
+   "-I.",
+   "-I./",
+   "-D_ISOC99_SOURCE",
+   "-D_FILE_OFFSET_BITS=64",
+   "-D_LARGEFILE_SOURCE",
+   "-I./compat/dispatch_semaphore",
+   "-DPIC",
+   "-DHAVE_AV_CONFIG_H",
+   "-DBUILDING_avutil",
+   "-O2",
+   "-fno-strict-aliasing",
+   "-ffp-model=strict",
+   "-fwrapv",
+   "-std=c11",
+   "-Werror=partial-availability",
+   "-fomit-frame-pointer",
+   "-fPIC",
+   "-pthread",
+   "-Wdeclaration-after-statement",
+   "-Wall",
+   "-Wdisabled-optimization",
+   "-Wpointer-arith",
+   "-Wredundant-decls",
+   "-Wwrite-strings",
+   "-Wtype-limits",
+   "-Wundef",
+   "-Wmissing-prototypes",
+   "-Wno-pointer-to-int-cast",
+   "-Wstrict-prototypes",
+   "-Wempty-body",
+   "-Wno-parentheses",
+   "-Wno-switch",
+   "-Wno-format-zero-length",
+   "-Wno-pointer-sign",
+   "-Wno-unused-const-variable",
+   "-Wno-bool-operation",
+   "-Wno-char-subscripts",
+   "-Oz",
+   "-fno-math-errno",
+   "-fno-signed-zeros",
+   "-mstack-alignment=16",
+   "-Qunused-arguments",
+   "-Werror=implicit-function-declaration",
+   "-Werror=missing-prototypes",
+   "-Werror=return-type"
+  ]
+ ],
+ "units": [
+  {
+   "source": "libavcodec/aarch64/fft_init_aarch64.c",
+   "object": "libavcodec/aarch64/fft_init_aarch64.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/aarch64/fft_neon.S",
+   "object": "libavcodec/aarch64/fft_neon.o",
+   "flags": 1
+  },
+  {
+   "source": "libavcodec/aarch64/idctdsp_init_aarch64.c",
+   "object": "libavcodec/aarch64/idctdsp_init_aarch64.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/aarch64/mdct_neon.S",
+   "object": "libavcodec/aarch64/mdct_neon.o",
+   "flags": 1
+  },
+  {
+   "source": "libavcodec/aarch64/simple_idct_neon.S",
+   "object": "libavcodec/aarch64/simple_idct_neon.o",
+   "flags": 1
+  },
+  {
+   "source": "libavcodec/ac3_parser.c",
+   "object": "libavcodec/ac3_parser.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/adts_parser.c",
+   "object": "libavcodec/adts_parser.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/allcodecs.c",
+   "object": "libavcodec/allcodecs.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/avcodec.c",
+   "object": "libavcodec/avcodec.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/avdct.c",
+   "object": "libavcodec/avdct.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/avfft.c",
+   "object": "libavcodec/avfft.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/avpacket.c",
+   "object": "libavcodec/avpacket.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/avpicture.c",
+   "object": "libavcodec/avpicture.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/bitstream.c",
+   "object": "libavcodec/bitstream.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/bitstream_filter.c",
+   "object": "libavcodec/bitstream_filter.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/bitstream_filters.c",
+   "object": "libavcodec/bitstream_filters.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/bsf.c",
+   "object": "libavcodec/bsf.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/codec_desc.c",
+   "object": "libavcodec/codec_desc.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/codec_par.c",
+   "object": "libavcodec/codec_par.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/d3d11va.c",
+   "object": "libavcodec/d3d11va.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/decode.c",
+   "object": "libavcodec/decode.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/dirac.c",
+   "object": "libavcodec/dirac.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/dv_profile.c",
+   "object": "libavcodec/dv_profile.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/encode.c",
+   "object": "libavcodec/encode.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/faandct.c",
+   "object": "libavcodec/faandct.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/faanidct.c",
+   "object": "libavcodec/faanidct.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/fdctdsp.c",
+   "object": "libavcodec/fdctdsp.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/fft_fixed_32.c",
+   "object": "libavcodec/fft_fixed_32.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/fft_float.c",
+   "object": "libavcodec/fft_float.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/fft_init_table.c",
+   "object": "libavcodec/fft_init_table.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/idctdsp.c",
+   "object": "libavcodec/idctdsp.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/imgconvert.c",
+   "object": "libavcodec/imgconvert.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/jfdctfst.c",
+   "object": "libavcodec/jfdctfst.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/jfdctint.c",
+   "object": "libavcodec/jfdctint.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/jni.c",
+   "object": "libavcodec/jni.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/jrevdct.c",
+   "object": "libavcodec/jrevdct.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/mathtables.c",
+   "object": "libavcodec/mathtables.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/mdct_fixed_32.c",
+   "object": "libavcodec/mdct_fixed_32.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/mdct_float.c",
+   "object": "libavcodec/mdct_float.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/mediacodec.c",
+   "object": "libavcodec/mediacodec.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/mpeg12framerate.c",
+   "object": "libavcodec/mpeg12framerate.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/null_bsf.c",
+   "object": "libavcodec/null_bsf.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/options.c",
+   "object": "libavcodec/options.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/parser.c",
+   "object": "libavcodec/parser.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/parsers.c",
+   "object": "libavcodec/parsers.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/profiles.c",
+   "object": "libavcodec/profiles.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/pthread.c",
+   "object": "libavcodec/pthread.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/pthread_frame.c",
+   "object": "libavcodec/pthread_frame.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/pthread_slice.c",
+   "object": "libavcodec/pthread_slice.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/qsv_api.c",
+   "object": "libavcodec/qsv_api.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/raw.c",
+   "object": "libavcodec/raw.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/simple_idct.c",
+   "object": "libavcodec/simple_idct.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/sinewin.c",
+   "object": "libavcodec/sinewin.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/utils.c",
+   "object": "libavcodec/utils.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/vorbis_parser.c",
+   "object": "libavcodec/vorbis_parser.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/wma.c",
+   "object": "libavcodec/wma.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/wma_common.c",
+   "object": "libavcodec/wma_common.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/wma_freqs.c",
+   "object": "libavcodec/wma_freqs.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/wmaprodec.c",
+   "object": "libavcodec/wmaprodec.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/xiph.c",
+   "object": "libavcodec/xiph.o",
+   "flags": 0
+  },
+  {
+   "source": "libavcodec/xma_parser.c",
+   "object": "libavcodec/xma_parser.o",
+   "flags": 0
+  },
+  {
+   "source": "libavutil/aarch64/cpu.c",
+   "object": "libavutil/aarch64/cpu.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/aarch64/float_dsp_init.c",
+   "object": "libavutil/aarch64/float_dsp_init.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/aarch64/float_dsp_neon.S",
+   "object": "libavutil/aarch64/float_dsp_neon.o",
+   "flags": 1
+  },
+  {
+   "source": "libavutil/adler32.c",
+   "object": "libavutil/adler32.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/aes.c",
+   "object": "libavutil/aes.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/aes_ctr.c",
+   "object": "libavutil/aes_ctr.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/audio_fifo.c",
+   "object": "libavutil/audio_fifo.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/avsscanf.c",
+   "object": "libavutil/avsscanf.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/avstring.c",
+   "object": "libavutil/avstring.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/base64.c",
+   "object": "libavutil/base64.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/blowfish.c",
+   "object": "libavutil/blowfish.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/bprint.c",
+   "object": "libavutil/bprint.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/buffer.c",
+   "object": "libavutil/buffer.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/camellia.c",
+   "object": "libavutil/camellia.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/cast5.c",
+   "object": "libavutil/cast5.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/channel_layout.c",
+   "object": "libavutil/channel_layout.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/color_utils.c",
+   "object": "libavutil/color_utils.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/cpu.c",
+   "object": "libavutil/cpu.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/crc.c",
+   "object": "libavutil/crc.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/des.c",
+   "object": "libavutil/des.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/dict.c",
+   "object": "libavutil/dict.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/display.c",
+   "object": "libavutil/display.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/dovi_meta.c",
+   "object": "libavutil/dovi_meta.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/downmix_info.c",
+   "object": "libavutil/downmix_info.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/encryption_info.c",
+   "object": "libavutil/encryption_info.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/error.c",
+   "object": "libavutil/error.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/eval.c",
+   "object": "libavutil/eval.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/fifo.c",
+   "object": "libavutil/fifo.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/file.c",
+   "object": "libavutil/file.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/file_open.c",
+   "object": "libavutil/file_open.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/film_grain_params.c",
+   "object": "libavutil/film_grain_params.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/fixed_dsp.c",
+   "object": "libavutil/fixed_dsp.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/float_dsp.c",
+   "object": "libavutil/float_dsp.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/frame.c",
+   "object": "libavutil/frame.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/hash.c",
+   "object": "libavutil/hash.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/hdr_dynamic_metadata.c",
+   "object": "libavutil/hdr_dynamic_metadata.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/hmac.c",
+   "object": "libavutil/hmac.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/hwcontext.c",
+   "object": "libavutil/hwcontext.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/imgutils.c",
+   "object": "libavutil/imgutils.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/integer.c",
+   "object": "libavutil/integer.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/intmath.c",
+   "object": "libavutil/intmath.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/lfg.c",
+   "object": "libavutil/lfg.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/lls.c",
+   "object": "libavutil/lls.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/log.c",
+   "object": "libavutil/log.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/log2_tab.c",
+   "object": "libavutil/log2_tab.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/mastering_display_metadata.c",
+   "object": "libavutil/mastering_display_metadata.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/mathematics.c",
+   "object": "libavutil/mathematics.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/md5.c",
+   "object": "libavutil/md5.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/mem.c",
+   "object": "libavutil/mem.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/murmur3.c",
+   "object": "libavutil/murmur3.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/opt.c",
+   "object": "libavutil/opt.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/parseutils.c",
+   "object": "libavutil/parseutils.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/pixdesc.c",
+   "object": "libavutil/pixdesc.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/pixelutils.c",
+   "object": "libavutil/pixelutils.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/random_seed.c",
+   "object": "libavutil/random_seed.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/rational.c",
+   "object": "libavutil/rational.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/rc4.c",
+   "object": "libavutil/rc4.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/reverse.c",
+   "object": "libavutil/reverse.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/ripemd.c",
+   "object": "libavutil/ripemd.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/samplefmt.c",
+   "object": "libavutil/samplefmt.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/sha.c",
+   "object": "libavutil/sha.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/sha512.c",
+   "object": "libavutil/sha512.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/slicethread.c",
+   "object": "libavutil/slicethread.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/spherical.c",
+   "object": "libavutil/spherical.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/stereo3d.c",
+   "object": "libavutil/stereo3d.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tea.c",
+   "object": "libavutil/tea.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/threadmessage.c",
+   "object": "libavutil/threadmessage.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/time.c",
+   "object": "libavutil/time.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/timecode.c",
+   "object": "libavutil/timecode.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tree.c",
+   "object": "libavutil/tree.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/twofish.c",
+   "object": "libavutil/twofish.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tx.c",
+   "object": "libavutil/tx.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tx_double.c",
+   "object": "libavutil/tx_double.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tx_float.c",
+   "object": "libavutil/tx_float.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/tx_int32.c",
+   "object": "libavutil/tx_int32.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/utils.c",
+   "object": "libavutil/utils.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/video_enc_params.c",
+   "object": "libavutil/video_enc_params.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/xga_font_data.c",
+   "object": "libavutil/xga_font_data.o",
+   "flags": 2
+  },
+  {
+   "source": "libavutil/xtea.c",
+   "object": "libavutil/xtea.o",
+   "flags": 2
+  }
+ ],
+ "archives": [
+  {
+   "path": "libavcodec/libavcodec.a",
+   "members": [
+    "libavcodec/aarch64/fft_init_aarch64.o",
+    "libavcodec/aarch64/fft_neon.o",
+    "libavcodec/aarch64/idctdsp_init_aarch64.o",
+    "libavcodec/aarch64/mdct_neon.o",
+    "libavcodec/aarch64/simple_idct_neon.o",
+    "libavcodec/ac3_parser.o",
+    "libavcodec/adts_parser.o",
+    "libavcodec/allcodecs.o",
+    "libavcodec/avcodec.o",
+    "libavcodec/avdct.o",
+    "libavcodec/avfft.o",
+    "libavcodec/avpacket.o",
+    "libavcodec/avpicture.o",
+    "libavcodec/bitstream.o",
+    "libavcodec/bitstream_filter.o",
+    "libavcodec/bitstream_filters.o",
+    "libavcodec/bsf.o",
+    "libavcodec/codec_desc.o",
+    "libavcodec/codec_par.o",
+    "libavcodec/d3d11va.o",
+    "libavcodec/decode.o",
+    "libavcodec/dirac.o",
+    "libavcodec/dv_profile.o",
+    "libavcodec/encode.o",
+    "libavcodec/faandct.o",
+    "libavcodec/faanidct.o",
+    "libavcodec/fdctdsp.o",
+    "libavcodec/fft_fixed_32.o",
+    "libavcodec/fft_float.o",
+    "libavcodec/fft_init_table.o",
+    "libavcodec/idctdsp.o",
+    "libavcodec/imgconvert.o",
+    "libavcodec/jfdctfst.o",
+    "libavcodec/jfdctint.o",
+    "libavcodec/jni.o",
+    "libavcodec/jrevdct.o",
+    "libavcodec/mathtables.o",
+    "libavcodec/mdct_fixed_32.o",
+    "libavcodec/mdct_float.o",
+    "libavcodec/mediacodec.o",
+    "libavcodec/mpeg12framerate.o",
+    "libavcodec/null_bsf.o",
+    "libavcodec/options.o",
+    "libavcodec/parser.o",
+    "libavcodec/parsers.o",
+    "libavcodec/profiles.o",
+    "libavcodec/pthread.o",
+    "libavcodec/pthread_frame.o",
+    "libavcodec/pthread_slice.o",
+    "libavcodec/qsv_api.o",
+    "libavcodec/raw.o",
+    "libavcodec/simple_idct.o",
+    "libavcodec/sinewin.o",
+    "libavcodec/utils.o",
+    "libavcodec/vorbis_parser.o",
+    "libavcodec/wma.o",
+    "libavcodec/wma_common.o",
+    "libavcodec/wma_freqs.o",
+    "libavcodec/wmaprodec.o",
+    "libavcodec/xiph.o",
+    "libavcodec/xma_parser.o"
+   ]
+  },
+  {
+   "path": "libavutil/libavutil.a",
+   "members": [
+    "libavutil/aarch64/cpu.o",
+    "libavutil/aarch64/float_dsp_init.o",
+    "libavutil/aarch64/float_dsp_neon.o",
+    "libavutil/adler32.o",
+    "libavutil/aes.o",
+    "libavutil/aes_ctr.o",
+    "libavutil/audio_fifo.o",
+    "libavutil/avsscanf.o",
+    "libavutil/avstring.o",
+    "libavutil/base64.o",
+    "libavutil/blowfish.o",
+    "libavutil/bprint.o",
+    "libavutil/buffer.o",
+    "libavutil/camellia.o",
+    "libavutil/cast5.o",
+    "libavutil/channel_layout.o",
+    "libavutil/color_utils.o",
+    "libavutil/cpu.o",
+    "libavutil/crc.o",
+    "libavutil/des.o",
+    "libavutil/dict.o",
+    "libavutil/display.o",
+    "libavutil/dovi_meta.o",
+    "libavutil/downmix_info.o",
+    "libavutil/encryption_info.o",
+    "libavutil/error.o",
+    "libavutil/eval.o",
+    "libavutil/fifo.o",
+    "libavutil/file.o",
+    "libavutil/file_open.o",
+    "libavutil/film_grain_params.o",
+    "libavutil/fixed_dsp.o",
+    "libavutil/float_dsp.o",
+    "libavutil/frame.o",
+    "libavutil/hash.o",
+    "libavutil/hdr_dynamic_metadata.o",
+    "libavutil/hmac.o",
+    "libavutil/hwcontext.o",
+    "libavutil/imgutils.o",
+    "libavutil/integer.o",
+    "libavutil/intmath.o",
+    "libavutil/lfg.o",
+    "libavutil/lls.o",
+    "libavutil/log.o",
+    "libavutil/log2_tab.o",
+    "libavutil/mastering_display_metadata.o",
+    "libavutil/mathematics.o",
+    "libavutil/md5.o",
+    "libavutil/mem.o",
+    "libavutil/murmur3.o",
+    "libavutil/opt.o",
+    "libavutil/parseutils.o",
+    "libavutil/pixdesc.o",
+    "libavutil/pixelutils.o",
+    "libavutil/random_seed.o",
+    "libavutil/rational.o",
+    "libavutil/rc4.o",
+    "libavutil/reverse.o",
+    "libavutil/ripemd.o",
+    "libavutil/samplefmt.o",
+    "libavutil/sha.o",
+    "libavutil/sha512.o",
+    "libavutil/slicethread.o",
+    "libavutil/spherical.o",
+    "libavutil/stereo3d.o",
+    "libavutil/tea.o",
+    "libavutil/threadmessage.o",
+    "libavutil/time.o",
+    "libavutil/timecode.o",
+    "libavutil/tree.o",
+    "libavutil/twofish.o",
+    "libavutil/tx.o",
+    "libavutil/tx_double.o",
+    "libavutil/tx_float.o",
+    "libavutil/tx_int32.o",
+    "libavutil/utils.o",
+    "libavutil/video_enc_params.o",
+    "libavutil/xga_font_data.o",
+    "libavutil/xtea.o"
+   ]
+  }
+ ],
+ "expect": {
+  "libavcodec/libavcodec.a": "05f400a429df5efd4d4cb63470a758f5da568503d24b3b5ae5cd03cb107dd87c",
+  "libavutil/libavutil.a": "a712a7e2a2929cf97e7b4338092c9854e8595acc7c7ef65b4c08b69b1910fc6a"
+ },
+ "xcode": "Xcode 26.5 / Build version 17F42"
+}

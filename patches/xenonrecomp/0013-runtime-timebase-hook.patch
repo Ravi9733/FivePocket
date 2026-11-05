@@ -1,0 +1,93 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -557,5 +557,16 @@
+     const bool immediateTrap = trapOp == 2 || trapOp == 3;
+     const bool registerTrap = trapOp == 31 && (trapWord & 1) == 0 && (trapXo == 4 || trapXo == 68);
+-    if (immediateTrap || registerTrap)
++    // Both mftb and mfspr aliases read the same 64-bit TB (268), or its
++    // zero-extended upper word (269). Decode the selector, not alias operands.
++    const uint32_t timebaseSelector = ((trapWord >> 16) & 31) | ((trapWord >> 6) & 0x3E0);
++    const bool timebaseRead = trapOp == 31 && (trapWord & 1) == 0
++        && (trapXo == 371 || trapXo == 339)
++        && (timebaseSelector == 268 || timebaseSelector == 269);
++    if (timebaseRead)
++    {
++        println("\t{}.u64 = uint64_t(PPC_READ_TIMEBASE()){};",
++            r((trapWord >> 21) & 31), timebaseSelector == 269 ? " >> 32" : "");
++    }
++    else if (immediateTrap || registerTrap)
+     {
+         const uint32_t to = (trapWord >> 21) & 31;
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -1451,7 +1451,8 @@
+         break;
+ 
+-    case PPC_INST_MFTB:
+-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
+-        break;
++    case PPC_INST_MFTB:
++    case PPC_INST_MFTBL:
++    case PPC_INST_MFTBU:
++        return false; // Only the exact encoded TB/TBU forms above are supported.
+ 
+     case PPC_INST_MR:
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -37,7 +37,12 @@
+ #endif
+ 
+-#ifndef PPC_RUNTIME_TRAP
+-#define PPC_RUNTIME_TRAP() std::abort()
+-#endif
++#ifndef PPC_RUNTIME_TRAP
++#define PPC_RUNTIME_TRAP() std::abort()
++#endif
++
++// Default compatibility is unchanged; runtimes may supply a normalized clock.
++#ifndef PPC_READ_TIMEBASE
++#define PPC_READ_TIMEBASE() __rdtsc()
++#endif
+ 
+ template <typename T>
+diff --git a/XenonTests/trap_recompiler.cc b/XenonTests/trap_recompiler.cc
+--- a/XenonTests/trap_recompiler.cc
++++ b/XenonTests/trap_recompiler.cc
+@@ -1,7 +1,8 @@
+ #include "../XenonRecomp/recompiler.h"
+ 
+-namespace { int trapCount = 0; }
+-#define PPC_CONFIG_H_INCLUDED
+-#define PPC_RUNTIME_TRAP() (++trapCount)
++namespace { int trapCount = 0; int timebaseReads = 0; }
++#define PPC_CONFIG_H_INCLUDED
++#define PPC_RUNTIME_TRAP() (++trapCount)
++#define PPC_READ_TIMEBASE() (++timebaseReads, 0xFEDCBA9876543210ULL)
+ #include "../XenonUtils/ppc_context.h"
+ 
+diff --git a/XenonTests/trap_recompiler.cc b/XenonTests/trap_recompiler.cc
+--- a/XenonTests/trap_recompiler.cc
++++ b/XenonTests/trap_recompiler.cc
+@@ -41,4 +41,18 @@
+ }
+ }
+-int main() {
++int main() {
++    Require(PPC_READ_TIMEBASE() == 0xFEDCBA9876543210ULL && timebaseReads == 1,
++        "configured timebase must be called once and retain all bits");
++    for (uint32_t rt = 0; rt < 32; ++rt) {
++        for (const uint32_t xo : {339U, 371U}) {
++            for (const uint32_t selector : {268U, 269U}) {
++                const uint32_t word = (31U << 26) | (rt << 21)
++                    | ((selector & 31) << 16) | ((selector & 0x3E0) << 6) | (xo << 1);
++                Contains(word, fmt::format("ctx.r{}.u64 = uint64_t(PPC_READ_TIMEBASE()){};",
++                    rt, selector == 269 ? " >> 32" : ""));
++                Require(Translate(word).find("__rdtsc") == std::string::npos,
++                    "timebase read bypassed runtime hook");
++            }
++        }
++    }
+     Contains((3U<<26)|(31U<<21)|22U, "PPC_RUNTIME_TRAP();");

@@ -1,0 +1,13 @@
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -257,7 +257,8 @@ struct PPCFPSCR
+ 
+     inline void setcsr(uint32_t csr) noexcept
+     {
+-        __asm__ __volatile__("msr fpcr, %0" : : "r"(csr));
++        const uint64_t hostCsr = csr;
++        __asm__ __volatile__("msr fpcr, %0" : : "r"(hostCsr));
+     }
+ #else
+ #   error "Missing implementation for FPSCR."

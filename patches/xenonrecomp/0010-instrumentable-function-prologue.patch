@@ -1,0 +1,53 @@
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -29,8 +29,16 @@
+ #define PPC_FUNC_IMPL(x) extern "C" PPC_FUNC(x)
+ #define PPC_EXTERN_FUNC(x) extern PPC_FUNC(x)
+ #define PPC_WEAK_FUNC(x) __attribute__((weak,noinline)) PPC_FUNC(x)
+ 
+-#define PPC_FUNC_PROLOGUE() __builtin_assume(((size_t)base & 0x1F) == 0)
++
++#ifndef PPC_RUNTIME_CHECKPOINT
++#define PPC_RUNTIME_CHECKPOINT() ((void)0)
++#endif
++
++#define PPC_FUNC_PROLOGUE() do { \
++    __builtin_assume(((size_t)base & 0x1F) == 0); \
++    PPC_RUNTIME_CHECKPOINT(); \
++} while (false)
+ 
+ #ifndef PPC_LOAD_U8
+ #define PPC_LOAD_U8(x) *(volatile uint8_t*)(base + (x))
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+--- a/XenonTests/exact_vector_recompiler.cc
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -1,6 +1,12 @@
+ #include "../XenonRecomp/recompiler.h"
+ 
++namespace
++{
++int prologueCheckpointCount = 0;
++}
++
+ #define PPC_CONFIG_H_INCLUDED
++#define PPC_RUNTIME_CHECKPOINT() (++prologueCheckpointCount)
+ #include "../XenonUtils/ppc_context.h"
+ 
+ #include <array>
+@@ -96,6 +102,15 @@ void ExpectElements(
+ 
+ int main()
+ {
++    alignas(32) std::array<uint8_t, 32> alignedStorage{};
++    auto* base = alignedStorage.data();
++    PPC_FUNC_PROLOGUE();
++    if (prologueCheckpointCount != 1)
++    {
++        std::cerr << "PPC_FUNC_PROLOGUE did not invoke the configured checkpoint\n";
++        return 1;
++    }
++
+     Translate(PPC_INST_VRFIP, "vrfip", { 4, 5 });
+     ExpectOrdered(
+         "vrfip128",

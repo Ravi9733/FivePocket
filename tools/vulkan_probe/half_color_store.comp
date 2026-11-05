@@ -1,0 +1,42 @@
+#version 450
+// Explicit half-color -> guarded reference EDRAM export, not retail format12.
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=0,std430) readonly buffer Source { uint words[]; } source;
+layout(set=0,binding=1,std430) buffer Backing { uint words[]; } backing;
+bool halfBits(uint halfWord,out uint bits){
+    uint exponent=(halfWord>>10u)&31u,mantissa=halfWord&1023u;
+    if(exponent==31u || (exponent==0u && mantissa!=0u))return false;
+    bits=((halfWord&0x8000u)<<16u)|(exponent==0u?0u:((exponent+112u)<<23u)|(mantissa<<13u));
+    return true;
+}
+// Same checked finite candidate as color_7e3.comp, independently tested against
+// Python nearest-neighbor packing for the complete bounded half-word domain.
+bool packRGB(uint bits,out uint code){
+    if((bits&0x7fffffffu)>=0x7f800000u)return false;
+    if((bits&0x80000000u)!=0u){code=0u;return true;}
+    if(bits>=0x41ff0000u){code=1023u;return true;}
+    uint biased;
+    if(bits<0x3e800000u){
+        uint shift=min(125u-(bits>>23u),24u),significand=0x800000u|(bits&0x7fffffu);
+        biased=significand>>shift;
+        if((biased&0xffffu)==0x8000u && ((biased>>16u)&1u)==0u &&
+            (significand&((1u<<shift)-1u))!=0u)return false;
+    }else biased=bits-(124u<<23u);
+    code=((biased+0x7fffu+((biased>>16u)&1u))>>16u)&1023u;return true;
+}
+void main(){
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if(p.x>=1280u || p.y>=720u || source.words.length()!=1843208 || backing.words.length()!=2621448)return;
+    for(uint i=0u;i<4u;++i)if(source.words[i]!=0x5a5a5a5au || source.words[1843204u+i]!=0x5a5a5a5au)return;
+    uint at=4u+(p.y*1280u+p.x)*2u,rg=source.words[at],ba=source.words[at+1u];
+    uvec4 value;uvec3 color;
+    if(!halfBits(rg&65535u,value.x) || !halfBits(rg>>16u,value.y) ||
+       !halfBits(ba&65535u,value.z) || !halfBits(ba>>16u,value.w) ||
+       !packRGB(value.x,color.x) || !packRGB(value.y,color.y) || !packRGB(value.z,color.z))return;
+    precise float scaled=clamp(uintBitsToFloat(value.w),0.0,1.0)*3.0;
+    precise float shifted=scaled+0.5;
+    uint packed=color.x|(color.y<<10u)|(color.z<<20u)|(uint(shifted)<<30u);
+    uint tile=720u+(p.y/16u)*16u+p.x/80u;
+    uint target=4u+tile*1280u+(p.y%16u)*80u+p.x%80u;
+    backing.words[target]=packed;
+}

@@ -1,0 +1,17 @@
+// Attempt v586 (resolved_layout_remap.h): the texels a fetch of another memory layout reads from a resolve destination.
+// One storage buffer: the resolved image's texels as vkCmdCopyImageToBuffer wrote them (row-major, `words` 32-bit words per
+// texel) at `source`, the per-fetch-texel source index table (resolved_layout_remap.h plan().sources, 0xFFFFFFFF: zero) at
+// `table`, the output (fetch texels row-major, copied into the remap image by vkCmdCopyBufferToImage) at `destination`.
+// Raw words: no format conversion, exact for every format. Compiled with the NDK's glslc:
+//   glslc -fshader-stage=compute --target-env=vulkan1.1 -O generic_layout_remap.comp -o - | tools (see generic_layout_remap.inc)
+#version 450
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Data { uint data[]; };
+layout(push_constant) uniform Parameters { uint count; uint words; uint source; uint table; uint destination; } p;
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= p.count) return;
+    const uint s = data[p.table + i];
+    for (uint w = 0u; w < p.words; ++w)
+        data[p.destination + i * p.words + w] = s == 0xFFFFFFFFu ? 0u : data[p.source + s * p.words + w];
+}

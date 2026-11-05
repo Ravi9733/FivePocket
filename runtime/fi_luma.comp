@@ -1,0 +1,15 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Pass 1: quarter-resolution luma of both frames (4x4 box average).
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "fi_common.glsl"
+void main() {
+    ivec2 q = ivec2(gl_GlobalInvocationID.xy);
+    if (q.x >= pc.quarter.x || q.y >= pc.quarter.y) return;
+    float a = 0.0, b = 0.0;
+    for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+        ivec2 p = min(q * 4 + ivec2(x, y), pc.size - 1);
+        a += luma(imageLoad(prevFrame, p)); b += luma(imageLoad(curFrame, p));
+    }
+    imageStore(prevLuma, q, vec4(a / 16.0)); imageStore(curLuma, q, vec4(b / 16.0));
+}

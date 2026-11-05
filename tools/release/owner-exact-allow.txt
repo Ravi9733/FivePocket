@@ -1,0 +1,5 @@
+# Exact files allowed to hold owner details (scan_owner.py --exact-allow; publish decision 19, 1.1.0-alpha.1 only).
+# Format: SHA-256 of the whole file, its path inside the package, the reason. Any other file, or this file with one
+# byte changed, is checked as usual.
+1504127361286650518ae97933aec67be398a358b6272b5aac1caa09a238c3a4 local-analysis/builder/thor-rc1/frozen-v852-3-manifest.json provenance of the reference build (Thor, v852-3); the user name matches the public author line
+cef5e45bdd069869fc7351665b17047a0c855a7224bd46f78de029ddbd4240e1 local-analysis/builder/thor-rc1/frozen-v718-3-manifest.json provenance of the reference build (Fold, v718-3); the user name matches the public author line

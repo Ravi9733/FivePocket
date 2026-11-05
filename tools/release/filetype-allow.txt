@@ -1,0 +1,4 @@
+# Libraries a download may carry as .dylib (scan_secrets.py --filetype-allow; publish decision 21). Format: whole-file
+# SHA-256, the path inside the download, the reason. Only these exact bytes at these places; every other .dylib fails.
+bb88a08056e477e3774573a07a30b708f33070c439e1b779110151705be1be56 host-tools/dxc/lib/libdxcompiler.dylib the DirectX Shader Compiler's compiler library, built from upstream source for macOS (LLVM/NCSA; host-tools/PROVENANCE.txt; decision 21)
+01363a2a4b7832426720ba88238497217eb44cce1b72c87c476d7918d566e10a host-tools/xenos/main/libfmt.11.dylib fmt 11.0.2 (MIT), the library XenosRecomp links dynamically on macOS (host-tools/PROVENANCE.txt; decision 21)

@@ -1,0 +1,14 @@
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -98,6 +98,11 @@
+     { DeclUsage::Color, 0, 17 },
+     { DeclUsage::BlendIndices, 0, 18 },
+     { DeclUsage::BlendWeight, 0, 19 },
++    // GTA V: the only further vertex inputs in its complete fxl_final_final
++    // corpus (COLOR1, TEXCOORD4, TEXCOORD5). Fits Adreno's 32 input locations.
++    { DeclUsage::Color, 1, 20 },
++    { DeclUsage::TexCoord, 4, 21 },
++    { DeclUsage::TexCoord, 5, 22 },
+ };
+ 
+ static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =

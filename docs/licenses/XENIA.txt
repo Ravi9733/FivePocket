@@ -1,0 +1,69 @@
+Copyright (c) 2015, Ben Vanik. All rights reserved.
+Vulkan pipeline mapping: Copyright 2022 Ben Vanik. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of the project nor the names of its contributors may be used
+  to endorse or promote products derived from this software without specific
+  prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL BEN VANIK BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+Reference: https://github.com/xenia-project/xenia
+Revision: 95a5c3ee250f80c3b9d139658649d9ffb6db3eec
+Adapted field/factor definitions and independent RGB/alpha pipeline mapping:
+src/xenia/gpu/registers.h
+src/xenia/gpu/xenos.h
+src/xenia/gpu/vulkan/vulkan_pipeline_cache.cc
+src/xenia/gpu/d3d12/pipeline_cache.cc
+Local: xenos_blend_control.h and native_translated_resources.h.
+Local differences: unknown fields reject; constants require a future owned path;
+explicit opt-in does not grant shader/render-target/completion authority.
+
+Depth sample counter byte layout adapted from src/xenia/gpu/xenos.h,
+xe_gpu_depth_sample_counts, in xenos_depth_sample_counts.h.
+This adaptation is a read-only codec and wrapping-delta calculation, not the
+fixed sample-count workaround in command_processor.cc. Query execution and
+completion are not authorized by decoding the bytes.
+
+Signed five-bit texture-offset conversion (half-texel units) follows
+src/xenia/gpu/ucode.h, TextureFetchInstruction::offset_x/offset_y, Copyright 2022
+Ben Vanik. Local: tools/rpf7_inventory/pixel_sample_dataflow.py. Explicit
+profiles and all other fetch addressing/modifier guards remain unchanged.
+Capture-only texture-slot selection in xenos_shader_texture_slots.h also
+uses ucode.h's offset/LOD fields and shader_translator.cc's setTexLOD
+has_dest=false classification. No texture sampling or draw admission follows.
+
+Bounded geometry-LOD CPU reference arithmetic also follows ucode.h scalar
+LOG_IEEE(16), RECIP_IEEE(19), EXP_IEEE(14) and the SM3 zero-multiply handling in
+src/xenia/gpu/spirv_shader_translator_alu.cc. Local: pixel_sample_dataflow.py,
+geometry_lod_shader_policy.py and tests/test_geometry_lod_numeric.py. This is
+an explicit reference-evaluator profile, not an adoption of a fork's reduced
+mantissa policy, a shader precision conformance claim or draw admission.
+
+native_fragment7e3_depth.h adapts the raw-alpha-test / fixed-point alpha-clamp /
+independent blend-term / per-write packing order from
+src/xenia/gpu/spirv_shader_translator_rb.cc (Copyright 2022 Ben Vanik).
+Local finite-input restrictions and explicit TRUNC20e4 policy do not claim
+Xbox interpolation/rounding equivalence or authorize a live draw.
+
+xenos_color_7e3.h's explicit Color7e3Rounding::XeniaShiftRound policy adapts
+PreClampedFloat32To7e3 / UnclampedFloat32To7e3 from the same file. The finite-input
+clamp, denormal bit shift, rounding bias and low ten-bit extraction follow that
+algorithm, including lost sticky bits. The default stricter agreement policy
+remains separate; neither policy is a measured Xbox hardware oracle.

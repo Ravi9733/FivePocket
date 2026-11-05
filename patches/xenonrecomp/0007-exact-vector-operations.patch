@@ -1,0 +1,367 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index 8fffe1e..aba1177 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -2274,6 +2274,12 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_packus_epi16(simde_mm_load_si128((simde__m128i*){}.s16), simde_mm_load_si128((simde__m128i*){}.s16)));", v(insn.operands[0]), v(insn.operands[2]), v(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_VPKUWUS:
++    case PPC_INST_VPKUWUS128:
++        // VSCR[SAT] is not currently represented by PPCContext.
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vpkuwus(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VREFP:
+     case PPC_INST_VREFP128:
+         // TODO: see if we can use rcp safely
+@@ -2293,6 +2299,12 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_ps({}.f32, simde_mm_round_ps(simde_mm_load_ps({}.f32), SIMDE_MM_FROUND_TO_NEAREST_INT | SIMDE_MM_FROUND_NO_EXC));", v(insn.operands[0]), v(insn.operands[1]));
+         break;
+ 
++    case PPC_INST_VRFIP:
++    case PPC_INST_VRFIP128:
++        printSetFlushMode(true);
++        println("\tsimde_mm_store_ps({}.f32, simde_mm_round_ps(simde_mm_load_ps({}.f32), SIMDE_MM_FROUND_TO_POS_INF | SIMDE_MM_FROUND_NO_EXC));", v(insn.operands[0]), v(insn.operands[1]));
++        break;
++
+     case PPC_INST_VRFIZ:
+     case PPC_INST_VRFIZ128:
+         printSetFlushMode(true);
+@@ -2365,10 +2377,13 @@ bool Recompiler::Recompile(
+             println("\t{}.u16[{}] = {}.u16[{}] << ({}.u8[{}] & 0xF);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[2]), i * 2);
+         break;
+ 
++    case PPC_INST_VSL:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsl(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VSLO:
+-        println("\t__debugbreak();");
+-        // println("\t{}.u8 = _mm_or_si128(_mm_slli_si128({}.u8, {}), simde_mm_srli_si128({}.u8, {}));",
+-        //     v(insn.operands[0]), v(insn.operands[1]), insn.operands[2], v(insn.operands[3]), 16 - insn.operands[2]);
++    case PPC_INST_VSLO128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vslo(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
+     case PPC_INST_VSUBSHS:
+@@ -2547,6 +2562,11 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsr(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_VSRO:
++    case PPC_INST_VSRO128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_vsro(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VSRAW:
+     case PPC_INST_VSRAW128:
+         // TODO: vectorize, ensure endianness is correct
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+index 68c1b90..76db818 100644
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -90,3 +90,27 @@ endif()
+ 
+ target_compile_definitions(XenonLowRiskTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+ add_test(NAME XenonLowRiskTranslationTests COMMAND XenonLowRiskTranslationTests)
++
++add_executable(XenonExactVectorTranslationTests
++    "exact_vector_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonExactVectorTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonExactVectorTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonExactVectorTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonExactVectorTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonExactVectorTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonExactVectorTranslationTests COMMAND XenonExactVectorTranslationTests)
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+index fff5b42..c9e5aef 100644
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -685,6 +685,16 @@ inline simde__m128i simde_mm_cmpgt_epu32(simde__m128i a, simde__m128i b)
+     return simde_mm_cmpgt_epi32(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
+ }
+ 
++inline simde__m128i simde_mm_vpkuwus(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i maximum = simde_mm_set1_epi32(UINT16_MAX);
++    a = simde_mm_min_epu32(a, maximum);
++    b = simde_mm_min_epu32(b, maximum);
++
++    // Vector registers are fully reversed, so the host halves are packed B, A.
++    return simde_mm_packus_epi32(b, a);
++}
++
+ inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
+ {
+     simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);
+@@ -701,6 +711,51 @@ inline simde__m128i simde_mm_vsr(simde__m128i a, simde__m128i b)
+     return simde_mm_castps_si128(simde_mm_insert_ps(simde_mm_castsi128_ps(simde_mm_srl_epi64(a, b)), simde_mm_castsi128_ps(simde_mm_srl_epi64(simde_mm_srli_si128(a, 4), b)), 0x10));
+ }
+ 
++inline simde__m128i simde_mm_vsl(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const unsigned int amount = shift.u8[0] & 0x7;
++
++    // The architectural vector is fully reversed in host storage. The byte at
++    // index zero contains guest bits 120-127 and carry therefore comes from the
++    // preceding host byte.
++    for (size_t i = 0; i < 16; i++)
++    {
++        const unsigned int carry = i == 0 ? 0 : source.u8[i - 1] >> (8 - amount);
++        result.u8[i] = uint8_t((source.u8[i] << amount) | carry);
++    }
++
++    return simde__m128i_from_private(result);
++}
++
++inline simde__m128i simde_mm_vslo(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const size_t amount = (shift.u8[0] & 0x78) >> 3;
++
++    for (size_t i = 0; i < 16; i++)
++        result.u8[i] = i >= amount ? source.u8[i - amount] : 0;
++
++    return simde__m128i_from_private(result);
++}
++
++inline simde__m128i simde_mm_vsro(simde__m128i a, simde__m128i b)
++{
++    const simde__m128i_private source = simde__m128i_to_private(a);
++    const simde__m128i_private shift = simde__m128i_to_private(b);
++    simde__m128i_private result;
++    const size_t amount = (shift.u8[0] & 0x78) >> 3;
++
++    for (size_t i = 0; i < 16; i++)
++        result.u8[i] = i + amount < 16 ? source.u8[i + amount] : 0;
++
++    return simde__m128i_from_private(result);
++}
++
+ inline simde__m128i simde_mm_vctuxs(simde__m128 src1)
+ {
+     simde__m128 xmm0 = simde_mm_max_ps(src1, simde_mm_set1_epi32(0));
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+new file mode 100644
+index 0000000..310a03b
+--- /dev/null
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -0,0 +1,197 @@
++#include "../XenonRecomp/recompiler.h"
++
++#define PPC_CONFIG_H_INCLUDED
++#include "../XenonUtils/ppc_context.h"
++
++#include <array>
++#include <cstdlib>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++
++template<typename T, size_t Size>
++simde__m128i FromGuestElements(const std::array<T, Size>& guest)
++{
++    static_assert(sizeof(T) * Size == 16);
++    std::array<T, Size> host{};
++    for (size_t i = 0; i < Size; i++)
++        host[Size - 1 - i] = guest[i];
++    return simde_mm_loadu_si128(reinterpret_cast<const simde__m128i*>(host.data()));
++}
++
++template<typename T, size_t Size>
++std::array<T, Size> ToGuestElements(simde__m128i value)
++{
++    static_assert(sizeof(T) * Size == 16);
++    std::array<T, Size> host{};
++    std::array<T, Size> guest{};
++    simde_mm_storeu_si128(reinterpret_cast<simde__m128i*>(host.data()), value);
++    for (size_t i = 0; i < Size; i++)
++        guest[i] = host[Size - 1 - i];
++    return guest;
++}
++
++template<typename T, size_t Size>
++void ExpectElements(
++    std::string_view name,
++    simde__m128i actual,
++    const std::array<T, Size>& expected)
++{
++    const auto result = ToGuestElements<T, Size>(actual);
++    if (result != expected)
++    {
++        std::cerr << name << " produced an incorrect vector\n";
++        std::exit(1);
++    }
++}
++}
++
++int main()
++{
++    Translate(PPC_INST_VRFIP, "vrfip", { 4, 5 });
++    ExpectOrdered(
++        "vrfip128",
++        Translate(PPC_INST_VRFIP128, "vrfip128", { 40, 45 }),
++        { "ctx.fpscr.enableFlushMode();",
++          "simde_mm_round_ps(",
++          "ctx.v45.f32",
++          "SIMDE_MM_FROUND_TO_POS_INF | SIMDE_MM_FROUND_NO_EXC" });
++
++    Translate(PPC_INST_VPKUWUS, "vpkuwus", { 5, 3, 4 });
++    ExpectOrdered(
++        "vpkuwus128",
++        Translate(PPC_INST_VPKUWUS128, "vpkuwus128", { 50, 51, 52 }),
++        { "ctx.v50.u8", "simde_mm_vpkuwus(", "ctx.v51.u32", "ctx.v52.u32" });
++
++    ExpectOrdered(
++        "vsl",
++        Translate(PPC_INST_VSL, "vsl", { 5, 8, 0 }),
++        { "ctx.v5.u8", "simde_mm_vsl(", "ctx.v8.u8", "ctx.v0.u8" });
++
++    Translate(PPC_INST_VSLO, "vslo", { 5, 3, 4 });
++    ExpectOrdered(
++        "vslo128",
++        Translate(PPC_INST_VSLO128, "vslo128", { 8, 59, 0 }),
++        { "ctx.v8.u8", "simde_mm_vslo(", "ctx.v59.u8", "ctx.v0.u8" });
++
++    Translate(PPC_INST_VSRO, "vsro", { 5, 3, 4 });
++    ExpectOrdered(
++        "vsro128",
++        Translate(PPC_INST_VSRO128, "vsro128", { 9, 59, 0 }),
++        { "ctx.v9.u8", "simde_mm_vsro(", "ctx.v59.u8", "ctx.v0.u8" });
++
++    const std::array<uint8_t, 16> bytes{
++        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
++        0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF };
++    const auto source = FromGuestElements(bytes);
++    const auto byteShift = FromGuestElements(std::array<uint8_t, 16>{
++        8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 });
++    const auto twoByteShift = FromGuestElements(std::array<uint8_t, 16>{
++        0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12,
++        0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0x12 });
++
++    ExpectElements("vsl by zero bits", simde_mm_vsl(source, simde_mm_setzero_si128()), bytes);
++
++    ExpectElements(
++        "vsl by four bits",
++        simde_mm_vsl(source, FromGuestElements(std::array<uint8_t, 16>{
++            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 })),
++        std::array<uint8_t, 16>{
++            0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
++            0x89, 0x9A, 0xAB, 0xBC, 0xCD, 0xDE, 0xEF, 0xF0 });
++
++    ExpectElements(
++        "vslo by one byte",
++        simde_mm_vslo(source, byteShift),
++        std::array<uint8_t, 16>{
++            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
++            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00 });
++
++    ExpectElements(
++        "vsro by one byte",
++        simde_mm_vsro(source, byteShift),
++        std::array<uint8_t, 16>{
++            0x00, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
++            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE });
++
++    ExpectElements(
++        "vslo uses bits 121-124",
++        simde_mm_vslo(source, twoByteShift),
++        std::array<uint8_t, 16>{
++            0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
++            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x00 });
++
++    ExpectElements(
++        "vsro uses bits 121-124",
++        simde_mm_vsro(source, twoByteShift),
++        std::array<uint8_t, 16>{
++            0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
++            0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD });
++
++    const auto packed = simde_mm_vpkuwus(
++        FromGuestElements(std::array<uint32_t, 4>{
++            0x80000000u, 0x7FFFFFFFu, 2u, 3u }),
++        FromGuestElements(std::array<uint32_t, 4>{
++            0xFFFFFFFFu, 65538u, 0xFFFFFFFEu, 16u }));
++    ExpectElements(
++        "vpkuwus unsigned saturation",
++        packed,
++        std::array<uint16_t, 8>{
++            0xFFFF, 0xFFFF, 2, 3, 0xFFFF, 0xFFFF, 0xFFFF, 16 });
++
++    return 0;
++}

@@ -1,0 +1,33 @@
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+// Explicit native sample-index -> reference EDRAM mapping, NOT console sample
+// locations or a general depth quantizer. Only canonical clear values are stored.
+layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
+layout(set=0,binding=1,std430) buffer Backing { uint words[]; } edram;
+layout(set=0,binding=3) uniform texture2DMS depthSource;
+layout(set=0,binding=4) uniform utexture2DMS stencilSource;
+layout(push_constant) uniform Controls { uint wrongHalfRows; uint wrongSample; } control;
+void main() {
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if(any(greaterThanEqual(p,uvec2(640,360))) || edram.words.length()!=2621448 ||
+       any(notEqual(textureSize(depthSource),ivec2(640,360))) || textureSamples(depthSource)!=4 ||
+       any(notEqual(textureSize(stencilSource),ivec2(640,360))) || textureSamples(stencilSource)!=4) return;
+    for(uint sampleIndex=0u;sampleIndex<4u;++sampleIndex) {
+        int nativeSample=int(control.wrongSample!=0u?sampleIndex^1u:sampleIndex);
+        float depth=texelFetch(depthSource,ivec2(p),nativeSample).x;
+        uint stencil=texelFetch(stencilSource,ivec2(p),nativeSample).x;
+        uint bits=floatBitsToUint(depth);
+        if(bits>0x3f800000u || stencil>255u) continue;
+        precise float scaled=depth*16777216.0;
+        if(scaled!=floor(scaled) || scaled==8388608.0) continue;
+        uint n=uint(scaled)-(scaled>8388608.0?1u:0u);
+        precise float back=float(n+(n>=0x800000u?1u:0u))*0.000000059604644775390625;
+        if(floatBitsToUint(back)!=bits) continue;
+        uvec2 at=p*2u+uvec2(sampleIndex>>1u,sampleIndex&1u);
+        uint tile=720u+(at.y/16u)*16u+at.x/80u;
+        uint localX=at.x%80u;
+        if(control.wrongHalfRows==0u) localX=(localX+40u)%80u;
+        uint word=4u+tile*1280u+(at.y%16u)*80u+localX;
+        edram.words[word]=(n<<8u)|stencil;
+    }
+}

@@ -1,0 +1,465 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b89407f..8f1ccc6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,5 +26,6 @@ add_subdirectory(${XENONUTILS_ROOT})
+ 
+ # Only tests if this is the top level project
+ if (${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR})
++    enable_testing()
+     add_subdirectory(XenonTests)
+ endif()
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index 20bdb3d..cfb4fc6 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -1063,7 +1063,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LBZU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U8({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LBZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U8({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LBZX:
+@@ -1091,7 +1097,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LDU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U64({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LDUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LDX:
+@@ -1117,6 +1129,20 @@ bool Recompiler::Recompile(
+         println("{}.u32);", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LFDU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", f(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LFDUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U64({});", f(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LFS:
+         printSetFlushMode(false);
+         print("\t{}.u32 = PPC_LOAD_U32(", temp());
+@@ -1126,6 +1152,22 @@ bool Recompiler::Recompile(
+         println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
+         break;
+ 
++    case PPC_INST_LFSU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u32 = PPC_LOAD_U32({});", temp(), ea());
++        println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LFSUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u32 = PPC_LOAD_U32({});", temp(), ea());
++        println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LFSX:
+         printSetFlushMode(false);
+         print("\t{}.u32 = PPC_LOAD_U32(", temp());
+@@ -1149,6 +1191,18 @@ bool Recompiler::Recompile(
+         println("{}.u32));", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LHAU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int16_t(PPC_LOAD_U16({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LHAUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int16_t(PPC_LOAD_U16({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LHZ:
+         print("\t{}.u64 = PPC_LOAD_U16(", r(insn.operands[0]));
+         if (insn.operands[2] != 0)
+@@ -1163,6 +1217,18 @@ bool Recompiler::Recompile(
+         println("{}.u32);", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LHZU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U16({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LHZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U16({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LHBRX:
+         // TODO: verify
+         print("\t{}.u64 = __builtin_bswap16(PPC_LOAD_U16(", r(insn.operands[0]));
+@@ -1247,6 +1313,12 @@ bool Recompiler::Recompile(
+         println("{}.u32));", r(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_LWAUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.s64 = int32_t(PPC_LOAD_U32({}));", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_LWBRX:
+         print("\t{}.u64 = __builtin_bswap32(PPC_LOAD_U32(", r(insn.operands[0]));
+         if (insn.operands[1] != 0)
+@@ -1268,7 +1340,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_LWZU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}.u64 = PPC_LOAD_U32({});", r(insn.operands[0]), ea());
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_LWZUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.u64 = PPC_LOAD_U32({});", r(insn.operands[0]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_LWZX:
+@@ -1528,8 +1606,14 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_STBU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U8({}, {}.u8);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}({}, {}.u8);", mmioStore() ? "PPC_MM_STORE_U8" : "PPC_STORE_U8", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STBUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u8);", mmioStore() ? "PPC_MM_STORE_U8" : "PPC_STORE_U8", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STBX:
+@@ -1558,8 +1642,14 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_STDU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U64({}, {}.u64);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STDUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STDX:
+@@ -1585,6 +1675,20 @@ bool Recompiler::Recompile(
+         println("{}.u32, {}.u64);", r(insn.operands[2]), f(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STFDU:
++        printSetFlushMode(false);
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), f(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STFDUX:
++        printSetFlushMode(false);
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u64);", mmioStore() ? "PPC_MM_STORE_U64" : "PPC_STORE_U64", ea(), f(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STFIWX:
+         printSetFlushMode(false);
+         print("{}", mmioStore() ? "\tPPC_MM_STORE_U32(" : "\tPPC_STORE_U32(");
+@@ -1602,6 +1706,22 @@ bool Recompiler::Recompile(
+         println("{}, {}.u32);", int32_t(insn.operands[1]), temp());
+         break;
+ 
++    case PPC_INST_STFSU:
++        printSetFlushMode(false);
++        println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), temp());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STFSUX:
++        printSetFlushMode(false);
++        println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), temp());
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STFSX:
+         printSetFlushMode(false);
+         println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
+@@ -1618,6 +1738,18 @@ bool Recompiler::Recompile(
+         println("{}, {}.u16);", int32_t(insn.operands[1]), r(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STHU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u16);", mmioStore() ? "PPC_MM_STORE_U16" : "PPC_STORE_U16", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
++        break;
++
++    case PPC_INST_STHUX:
++        println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}({}, {}.u16);", mmioStore() ? "PPC_MM_STORE_U16" : "PPC_STORE_U16", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
++        break;
++
+     case PPC_INST_STHBRX:
+         print("{}", mmioStore() ? "\tPPC_MM_STORE_U16(" : "\tPPC_STORE_U16(");
+         if (insn.operands[1] != 0)
+@@ -1714,13 +1846,13 @@ bool Recompiler::Recompile(
+     case PPC_INST_STWU:
+         println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
+         println("\t{}{}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32(" : "PPC_STORE_U32(", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[2]), ea());
++        println("\t{}.u64 = {};", r(insn.operands[2]), ea());
+         break;
+ 
+     case PPC_INST_STWUX:
+         println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
+-        println("\tPPC_STORE_U32({}, {}.u32);", ea(), r(insn.operands[0]));
+-        println("\t{}.u32 = {};", r(insn.operands[1]), ea());
++        println("\t{}({}, {}.u32);", mmioStore() ? "PPC_MM_STORE_U32" : "PPC_STORE_U32", ea(), r(insn.operands[0]));
++        println("\t{}.u64 = {};", r(insn.operands[1]), ea());
+         break;
+ 
+     case PPC_INST_STWX:
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+index 8beb23c..21ef1db 100644
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -1,5 +1,29 @@
+ project("XenonTests")
+ 
++add_executable(XenonTranslationTests
++    "update_form_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonTranslationTests COMMAND XenonTranslationTests)
++
+ file(GLOB TEST_FILES *.cpp)
+ 
+ if(TEST_FILES)
+diff --git a/XenonTests/update_form_recompiler.cc b/XenonTests/update_form_recompiler.cc
+new file mode 100644
+index 0000000..129eca4
+--- /dev/null
++++ b/XenonTests/update_form_recompiler.cc
+@@ -0,0 +1,156 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++}
++
++int main()
++{
++    ExpectOrdered(
++        "stfsu",
++        Translate(PPC_INST_STFSU, "stfsu", { 1, uint32_t(-16), 3 }),
++        { "temp.f32 = float(ctx.f1.f64);",
++          "ea = -16 + ctx.r3.u32;",
++          "PPC_STORE_U32(ea, temp.u32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lfsu",
++        Translate(PPC_INST_LFSU, "lfsu", { 1, 12, 3 }),
++        { "ea = 12 + ctx.r3.u32;",
++          "temp.u32 = PPC_LOAD_U32(ea);",
++          "ctx.f1.f64 = double(temp.f32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lhzu",
++        Translate(PPC_INST_LHZU, "lhzu", { 5, uint32_t(-2), 3 }),
++        { "ea = -2 + ctx.r3.u32;",
++          "ctx.r5.u64 = PPC_LOAD_U16(ea);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "sthu",
++        Translate(PPC_INST_STHU, "sthu", { 5, 2, 3 }),
++        { "ea = 2 + ctx.r3.u32;",
++          "PPC_STORE_U16(ea, ctx.r5.u16);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lfsux",
++        Translate(PPC_INST_LFSUX, "lfsux", { 1, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "temp.u32 = PPC_LOAD_U32(ea);",
++          "ctx.f1.f64 = double(temp.f32);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lhzux",
++        Translate(PPC_INST_LHZUX, "lhzux", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "ctx.r5.u64 = PPC_LOAD_U16(ea);",
++          "ctx.r3.u64 = ea;" });
++
++    ExpectOrdered(
++        "lwaux",
++        Translate(PPC_INST_LWAUX, "lwaux", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "ctx.r5.s64 = int32_t(PPC_LOAD_U32(ea));",
++          "ctx.r3.u64 = ea;" });
++
++    // A store whose source and update register are the same must read the old
++    // source value before architectural writeback of the effective address.
++    ExpectOrdered(
++        "stbux alias",
++        Translate(PPC_INST_STBUX, "stbux", { 3, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "PPC_STORE_U8(ea, ctx.r3.u8);",
++          "ctx.r3.u64 = ea;" });
++
++    struct CoverageCase
++    {
++        int id;
++        const char* name;
++        std::array<uint32_t, 3> operands;
++    };
++    constexpr CoverageCase coverage[] = {
++        { PPC_INST_LBZUX, "lbzux", { 5, 3, 4 } },
++        { PPC_INST_LDUX, "ldux", { 5, 3, 4 } },
++        { PPC_INST_LFDU, "lfdu", { 1, 8, 3 } },
++        { PPC_INST_LFDUX, "lfdux", { 1, 3, 4 } },
++        { PPC_INST_LHAU, "lhau", { 5, 2, 3 } },
++        { PPC_INST_LHAUX, "lhaux", { 5, 3, 4 } },
++        { PPC_INST_LWZUX, "lwzux", { 5, 3, 4 } },
++        { PPC_INST_STDUX, "stdux", { 5, 3, 4 } },
++        { PPC_INST_STFDU, "stfdu", { 1, 8, 3 } },
++        { PPC_INST_STFDUX, "stfdux", { 1, 3, 4 } },
++        { PPC_INST_STFSUX, "stfsux", { 1, 3, 4 } },
++        { PPC_INST_STHUX, "sthux", { 5, 3, 4 } },
++    };
++    for (const auto& test : coverage)
++    {
++        const auto output = Translate(
++            test.id,
++            test.name,
++            { test.operands[0], test.operands[1], test.operands[2] });
++        ExpectOrdered(test.name, output, { ".u64 = ea;" });
++    }
++
++    return 0;
++}

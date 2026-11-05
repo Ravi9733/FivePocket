@@ -1,0 +1,21 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -2598,6 +2598,17 @@
+         // NOTE: handling vector reversal here too
+         switch (insn.operands[2] >> 2)
+         {
++        case 2: // NORMPACKED32: biased signed XYZ and unsigned W, not SNORM floats.
++            for (size_t i = 0; i < 3; i++)
++            {
++                println("\t{}.u32 = ({}.u32[0] >> {}) & 0x3FFU;", temp(), v(insn.operands[1]), i * 10);
++                println("\t{}.u32[{}] = {}.u32 == 0x200U ? 0x7FC00000U : 0x40400000U + (({}.u32 ^ 0x200U) - 0x200U);", vTemp(), 3 - i, temp(), temp());
++            }
++            println("\t{}.u32[0] = 0x3F800000U + ({}.u32[0] >> 30);", vTemp(), v(insn.operands[1]));
++            // Snapshot all lanes in vTemp before writing a possibly aliased VD.
++            println("\t{} = {};", v(insn.operands[0]), vTemp());
++            break;
++
+         case 3: // FLOAT16_2
+         case 5: // FLOAT16_4
+             println("\trecomp::vmx::unpackHalf<{}>({}.u32, {}.u32);", (insn.operands[2] >> 2) == 5 ? 4 : 2, v(insn.operands[0]), v(insn.operands[1]));

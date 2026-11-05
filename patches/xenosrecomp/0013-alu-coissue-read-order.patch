@@ -1,0 +1,226 @@
+diff --color -ruN a/XenosRecomp/alu_coissue.h b/XenosRecomp/alu_coissue.h
+--- a/XenosRecomp/alu_coissue.h	1969-12-31 19:00:00
++++ b/XenosRecomp/alu_coissue.h	2026-10-22 14:57:38
+@@ -0,0 +1,70 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++
++#include "shader_code.h"
++
++// A Xenos ALU instruction co-issues a vector and a scalar operation. Both read their source registers before either writes
++// its result, so a scalar operation may read a temporary that the paired vector operation overwrites in the same
++// instruction and still see the previous value. The recompiler prints the vector assignment before the scalar expression;
++// when this predicate holds it prints the scalar computation (predicate, ps, a0) first instead, and the scalar register write
++// after the vector one as before.
++//
++// Scalar source operands, as the recompiler reads them: src3's swizzle slot "a" ((swizzle >> 6) + 3) for every scalar
++// operation that reads a register; slot "b" (swizzle & 3) as well for the two-operand forms; for the *sc forms the temporary
++// (opcode & 1) | (src3Select << 1) | (src3Swizzle & 0x3C), component swizzle & 3 (src3Register names the constant there).
++// Exported results, relative destinations, relative sources and vector kills (which write nothing) are not hazards here.
++inline bool XenosAluCoIssueHazard(const AluInstruction& instr)
++{
++    if (instr.exportData || instr.vectorDestRelative || instr.vectorWriteMask == 0)
++        return false;
++    if (instr.vectorOpcode >= AluVectorOpcode::KillEq && instr.vectorOpcode <= AluVectorOpcode::KillNe)
++        return false;
++
++    auto overwritten = [&](uint32_t reg, uint32_t component)
++        {
++            return reg == instr.vectorDest && ((instr.vectorWriteMask >> component) & 0x1) != 0;
++        };
++
++    switch (instr.scalarOpcode)
++    {
++    case AluScalarOpcode::SetpClr:
++    case AluScalarOpcode::RetainPrev:
++        return false;
++
++    case AluScalarOpcode::Mulsc0:
++    case AluScalarOpcode::Mulsc1:
++    case AluScalarOpcode::Addsc0:
++    case AluScalarOpcode::Addsc1:
++    case AluScalarOpcode::Subsc0:
++    case AluScalarOpcode::Subsc1:
++        return overwritten((uint32_t(instr.scalarOpcode) & 1) | (instr.src3Select << 1) | (instr.src3Swizzle & 0x3C),
++            instr.src3Swizzle & 0x3);
++
++    default:
++        break;
++    }
++
++    if (!instr.src3Select || (instr.src3Register & 0x40) != 0)
++        return false;
++
++    const uint32_t reg = instr.src3Register & 0x3F;
++    const uint32_t a = ((instr.src3Swizzle >> 6) + 3) & 0x3;
++    const uint32_t b = instr.src3Swizzle & 0x3;
++
++    switch (instr.scalarOpcode)
++    {
++    case AluScalarOpcode::Adds:
++    case AluScalarOpcode::Muls:
++    case AluScalarOpcode::Maxs:
++    case AluScalarOpcode::Mins:
++    case AluScalarOpcode::MaxAs:
++    case AluScalarOpcode::MaxAsf:
++    case AluScalarOpcode::Subs:
++        return overwritten(reg, a) || overwritten(reg, b);
++
++    default:
++        return overwritten(reg, a);
++    }
++}
+diff --color -ruN a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
+--- a/XenosRecomp/shader_recompiler.cpp	2026-10-22 14:56:42
++++ b/XenosRecomp/shader_recompiler.cpp	2026-10-22 14:57:10
+@@ -1,4 +1,5 @@
+ #include "shader_recompiler.h"
++#include "alu_coissue.h"
+ #include "shader_common.h"
+ #include "shader_validator.h"
+ 
+@@ -733,6 +734,7 @@
+         println("a0 = (int)clamp(floor(({}).w + 0.5), -256.0, 255.0);", op(VECTOR_0).expression);
+     }
+ 
++    const size_t vectorStatementStart = out.size();
+     uint32_t vectorWriteMask = instr.vectorWriteMask;
+     if (instr.exportData)
+         vectorWriteMask &= ~instr.scalarWriteMask;
+@@ -1012,6 +1014,7 @@
+         out += ";\n";
+     }
+ 
++    const size_t scalarStatementStart = out.size();
+     if (instr.scalarOpcode != AluScalarOpcode::RetainPrev)
+     {
+         if (instr.scalarOpcode >= AluScalarOpcode::SetpEq && instr.scalarOpcode <= AluScalarOpcode::SetpRstr)
+@@ -1235,6 +1238,13 @@
+             println("a0 = (int)clamp(floor({}), -256.0, 255.0);", op(SCALAR_0).expression);
+             break;
+         }
++    }
++
++    // Co-issue: the scalar operation reads its sources before the vector write (see alu_coissue.h).
++    if (XenosAluCoIssueHazard(instr))
++    {
++        out = out.substr(0, vectorStatementStart) + out.substr(scalarStatementStart) +
++            out.substr(vectorStatementStart, scalarStatementStart - vectorStatementStart);
+     }
+ 
+     uint32_t scalarWriteMask = instr.scalarWriteMask;
+diff --color -ruN a/XenosTests/CMakeLists.txt b/XenosTests/CMakeLists.txt
+--- a/XenosTests/CMakeLists.txt	2026-10-22 14:56:41
++++ b/XenosTests/CMakeLists.txt	2026-10-22 14:57:32
+@@ -17,3 +17,8 @@
+ target_include_directories(XenosShaderValidatorBatchTests PRIVATE
+     "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
+ add_test(NAME XenosShaderValidatorBatchTests COMMAND XenosShaderValidatorBatchTests)
++
++add_executable(XenosAluCoIssueTests alu_coissue_test.cpp)
++target_include_directories(XenosAluCoIssueTests PRIVATE
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
++add_test(NAME XenosAluCoIssueTests COMMAND XenosAluCoIssueTests)
+diff --color -ruN a/XenosTests/alu_coissue_test.cpp b/XenosTests/alu_coissue_test.cpp
+--- a/XenosTests/alu_coissue_test.cpp	1969-12-31 19:00:00
++++ b/XenosTests/alu_coissue_test.cpp	2026-10-22 14:57:32
+@@ -0,0 +1,97 @@
++#include "alu_coissue.h"
++
++#include <cstdlib>
++#include <iostream>
++
++// Synthetic ALU instructions (no title data): the co-issue hazard predicate the recompiler uses to print a scalar operation
++// before the vector assignment of the same instruction.
++namespace
++{
++int failures = 0;
++
++void Require(bool condition, const char* message)
++{
++    if (!condition)
++    {
++        std::cerr << "FAIL " << message << '\n';
++        ++failures;
++    }
++}
++
++// Swizzle bits for a scalar operand that reads component `a` in slot a and component `b` in slot b.
++uint32_t ScalarSwizzle(uint32_t a, uint32_t b)
++{
++    return (((a + 1) & 0x3) << 6) | (b & 0x3);
++}
++
++AluInstruction VectorAdd(uint32_t dest, uint32_t mask)
++{
++    AluInstruction instr{};
++    instr.vectorDest = dest;
++    instr.vectorWriteMask = mask;
++    instr.vectorOpcode = AluVectorOpcode::Add;
++    instr.scalarDest = 0;
++    instr.scalarWriteMask = 0b0001;
++    return instr;
++}
++}
++
++int main()
++{
++    // A constant-times-temporary scalar (mulsc1, temporary r1 = (opcode & 1)) reading r1.x while the vector writes r1.xyz.
++    AluInstruction constTimesTemp = VectorAdd(1, 0b0111);
++    constTimesTemp.scalarOpcode = AluScalarOpcode::Mulsc1;
++    constTimesTemp.src3Register = 200; // the constant
++    constTimesTemp.src3Swizzle = 0;    // temporary component x
++    Require(XenosAluCoIssueHazard(constTimesTemp), "mulsc1 reading r1.x under a vector write of r1.xyz");
++
++    AluInstruction otherComponent = constTimesTemp;
++    otherComponent.src3Swizzle = 3; // component w, which the vector does not write
++    Require(!XenosAluCoIssueHazard(otherComponent), "mulsc1 reading r1.w under a vector write of r1.xyz");
++
++    AluInstruction otherTemporary = constTimesTemp;
++    otherTemporary.scalarOpcode = AluScalarOpcode::Mulsc0; // temporary r0
++    Require(!XenosAluCoIssueHazard(otherTemporary), "mulsc0 reading r0.x under a vector write of r1.xyz");
++
++    // A two-operand scalar (muls) reading r5 in slot b only.
++    AluInstruction twoOperand = VectorAdd(5, 0b0001);
++    twoOperand.scalarOpcode = AluScalarOpcode::Muls;
++    twoOperand.src3Select = 1;
++    twoOperand.src3Register = 5;
++    twoOperand.src3Swizzle = ScalarSwizzle(2, 0); // a = z, b = x
++    Require(XenosAluCoIssueHazard(twoOperand), "muls reading r5.x in slot b under a vector write of r5.x");
++
++    AluInstruction oneOperand = twoOperand;
++    oneOperand.scalarOpcode = AluScalarOpcode::Rcp; // reads slot a (z) only
++    Require(!XenosAluCoIssueHazard(oneOperand), "rcp reading r5.z under a vector write of r5.x");
++    oneOperand.src3Swizzle = ScalarSwizzle(0, 2);
++    Require(XenosAluCoIssueHazard(oneOperand), "rcp reading r5.x under a vector write of r5.x");
++
++    AluInstruction exported = oneOperand;
++    exported.exportData = 1;
++    Require(!XenosAluCoIssueHazard(exported), "an exporting instruction");
++
++    AluInstruction relative = oneOperand;
++    relative.src3Register = 5 | 0x40;
++    Require(!XenosAluCoIssueHazard(relative), "a relative scalar source");
++
++    AluInstruction constant = oneOperand;
++    constant.src3Select = 0;
++    Require(!XenosAluCoIssueHazard(constant), "a constant scalar source");
++
++    AluInstruction retain = oneOperand;
++    retain.scalarOpcode = AluScalarOpcode::RetainPrev;
++    Require(!XenosAluCoIssueHazard(retain), "retain_prev reads no register");
++
++    AluInstruction kill = oneOperand;
++    kill.vectorOpcode = AluVectorOpcode::KillEq;
++    Require(!XenosAluCoIssueHazard(kill), "a vector kill writes no register");
++
++    AluInstruction noVectorWrite = oneOperand;
++    noVectorWrite.vectorWriteMask = 0;
++    Require(!XenosAluCoIssueHazard(noVectorWrite), "no vector write");
++
++    if (failures == 0)
++        std::cout << "alu_coissue_test: all passed\n";
++    return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
++}

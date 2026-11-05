@@ -1,0 +1,32 @@
+#version 450
+// Explicit reference copy:1x unsigned7e3/A2 -> swapped RGBA8, tiled1280x720.
+// No guest physical write, ROP, display submission or retail execution oracle.
+layout(local_size_x=8,local_size_y=8) in;
+#ifndef COPY_SOURCE_BINDING
+#define COPY_SOURCE_BINDING 1
+#endif
+#ifndef COPY_DESTINATION_BINDING
+#define COPY_DESTINATION_BINDING 2
+#endif
+layout(set=0,binding=COPY_SOURCE_BINDING,std430) readonly buffer Backing { uint words[]; } edram;
+layout(set=0,binding=COPY_DESTINATION_BINDING,std430) writeonly buffer Destination { uint words[]; } outputWords;
+uint channel8(uint code) {
+    code&=1023u;
+    if(code>=384u)return 255u;
+    uint e=code>>7u,m=code&127u;
+    uint numerator=e==0u?m:128u+m,denominator=e==2u?256u:512u;
+    return (numerator*255u+denominator/2u)/denominator;
+}
+void main() {
+    uvec2 p=gl_GlobalInvocationID.xy;
+    if(any(greaterThanEqual(p,uvec2(1280,720))) || edram.words.length()!=2621448 ||
+       outputWords.words.length()!=942088)return;
+    uint tile=720u+(p.y/16u)*16u+p.x/80u;
+    uint packed=edram.words[4u+tile*1280u+(p.y%16u)*80u+p.x%80u];
+    uint r=channel8(packed),g=channel8(packed>>10u),b=channel8(packed>>20u),a=(packed>>30u)*85u;
+    uint converted=b|(g<<8u)|(r<<16u)|(a<<24u);
+    uint x=p.x&31u,y=p.y&31u;
+    uint inner=((x&3u)<<2u)|((x&12u)<<3u)|((((x>>4u)^(y>>3u))&1u)<<7u)|((y&1u)<<4u)|((y&30u)<<7u);
+    uint address=((p.y/32u)*40u+p.x/32u)*4096u+inner;
+    outputWords.words[4u+address/4u]=converted;
+}

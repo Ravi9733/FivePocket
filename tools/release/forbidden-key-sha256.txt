@@ -1,0 +1,5 @@
+# SHA-256 of key material that must never appear in anything we publish (16-byte AES keys).
+# The XEX2 devkit key is sixteen zero bytes, so it is not listed: it would match every run of padding.
+# Only the digests are listed; the keys themselves are not in this repository. scan_secrets.py hashes every
+# 16-byte value it can read from byte arrays, hex strings and small binary files and fails on a match.
+a0bd3f5f56adf2b0238a2702c0c0cd8548fb34b3dc19345943dc011010723fe4 Xbox 360 XEX2 retail key

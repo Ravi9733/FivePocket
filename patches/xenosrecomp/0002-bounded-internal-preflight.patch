@@ -1,0 +1,797 @@
+diff --git a/XenosRecomp/CMakeLists.txt b/XenosRecomp/CMakeLists.txt
+index b187f59..7a20715 100644
+--- a/XenosRecomp/CMakeLists.txt
++++ b/XenosRecomp/CMakeLists.txt
+@@ -20,6 +20,8 @@ add_executable(XenosRecomp
+     shader_code.h
+     shader_recompiler.cpp
+     shader_recompiler.h
++    shader_validator.cpp
++    shader_validator.h
+     "${SMOLV_SOURCE_DIR}/smolv.cpp")
+ 
+ target_link_libraries(XenosRecomp PRIVATE
+diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
+index 538c0ae..578b6c6 100644
+--- a/XenosRecomp/main.cpp
++++ b/XenosRecomp/main.cpp
+@@ -33,17 +33,23 @@ static void writeAllBytes(const char* filePath, const void* data, size_t dataSiz
+ struct RecompiledShader
+ {
+     uint8_t* data = nullptr;
++    size_t size = 0;
+     IDxcBlob* dxil = nullptr;
+     std::vector<uint8_t> spirv;
+     std::vector<uint8_t> air;
+     uint32_t specConstantsMask = 0;
++    std::string error;
+ };
+ 
+ void recompileShader(RecompiledShader& shader, const std::string_view include, std::atomic<uint32_t>& progress, uint32_t numShaders)
+ {
+     thread_local ShaderRecompiler recompiler;
+     recompiler = {};
+-    recompiler.recompile(shader.data, include);
++    if (!recompiler.recompile(shader.data, shader.size, include, shader.error))
++    {
++        ++progress;
++        return;
++    }
+ 
+     shader.specConstantsMask = recompiler.specConstantsMask;
+ 
+@@ -138,6 +144,7 @@ int main(int argc, char** argv)
+                     if (shader.second)
+                     {
+                         shader.first->second.data = fileData.get() + i;
++                        shader.first->second.size = dataSize;
+                         foundAny = true;
+                         shaderFilenames[hash] = file.path().string();
+                     }
+@@ -191,6 +198,15 @@ int main(int argc, char** argv)
+             thread.join();
+         }
+ 
++        for (const auto& [_, shader] : shaders)
++        {
++            if (!shader.error.empty())
++            {
++                fmt::println(stderr, "A shader container failed bounded validation or translation.");
++                return 1;
++            }
++        }
++
+         fmt::println("Creating shader cache...");
+ 
+         StringBuffer f;
+@@ -294,7 +310,12 @@ int main(int argc, char** argv)
+             fmt::println(stderr, "Input is not one complete bounded Xenos shader container.");
+             return 1;
+         }
+-        recompiler.recompile(fileData.get(), include);
++        std::string error;
++        if (!recompiler.recompile(fileData.get(), fileSize, include, error))
++        {
++            fmt::println(stderr, "Shader container failed bounded validation or translation.");
++            return 1;
++        }
+         writeAllBytes(output, recompiler.out.data(), recompiler.out.size());
+     }
+ 
+diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
+index 894ee67..e2fc318 100644
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1,5 +1,6 @@
+ #include "shader_recompiler.h"
+ #include "shader_common.h"
++#include "shader_validator.h"
+ 
+ static constexpr char SWIZZLES[] = 
+ { 
+@@ -192,7 +193,8 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+         print("(float{})(", size);
+ 
+     auto findResult = vertexElements.find(address);
+-    assert(findResult != vertexElements.end());
++    if (findResult == vertexElements.end())
++        throw std::runtime_error("vertex fetch has no matching vertex declaration");
+ 
+     switch (findResult->second.usage)
+     {
+@@ -516,13 +518,15 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+                     }
+                     else
+                     {
+-                        assert(!instr.const0Relative && !instr.const1Relative);
++                        if (instr.const0Relative || instr.const1Relative)
++                            throw std::runtime_error("relative access to a scalar constant is unsupported");
+                         regFormatted = constantName;
+                     }
+                 }
+                 else
+                 {
+-                    assert(!instr.const0Relative && !instr.const1Relative);
++                    if (instr.const0Relative || instr.const1Relative)
++                        throw std::runtime_error("relative access to an undeclared constant is unsupported");
+                     regFormatted = fmt::format("c{}", reg);
+                 }
+             }
+@@ -673,7 +677,8 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+             default:
+             {
+                 auto findResult = interpolators.find(instr.vectorDest);
+-                assert(findResult != interpolators.end());
++                if (findResult == interpolators.end())
++                    throw std::runtime_error("shader export has no matching interpolator");
+                 exportRegister = findResult->second;
+                 break;
+             }
+@@ -1283,12 +1288,30 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
+     }
+ }
+ 
+-void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_view& include)
++bool ShaderRecompiler::recompile(
++    const uint8_t* shaderData,
++    size_t shaderSize,
++    const std::string_view& include,
++    std::string& error)
+ {
+-    const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
++    if (!ValidateXenosShaderContainer(shaderData, shaderSize, error))
++        return false;
++    try
++    {
++        recompileUnchecked(shaderData, include);
++        return true;
++    }
++    catch (const std::exception& exception)
++    {
++        out.clear();
++        error = exception.what();
++        return false;
++    }
++}
+ 
+-    assert((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100);
+-    assert(shaderContainer->constantTableOffset != NULL);
++void ShaderRecompiler::recompileUnchecked(const uint8_t* shaderData, const std::string_view& include)
++{
++    const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
+ 
+     out += include;
+     out += '\n';
+@@ -1581,8 +1604,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             }
+ 
+             if (!foundUsage) {
+-                fmt::println("Missing mapping for vertex element usage: {} {}", USAGE_VARIABLES[uint32_t(vertexElement.usage)], uint32_t(vertexElement.usageIndex));
+-                exit(1);
++                throw std::runtime_error("vertex element has no configured host attribute mapping");
+             }
+ 
+             vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
+@@ -2135,7 +2157,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+             {
+                 if (cfInstr.condJmp.isUnconditional)
+                 {
+-                    assert(!simpleControlFlow);
++                    if (simpleControlFlow)
++                        throw std::runtime_error("unconditional jump was classified as simple control flow");
+                     println("\t\t\tpc = {};", uint32_t(cfInstr.condJmp.address));
+                     out += "\t\t\tcontinue;\n";
+                 }
+diff --git a/XenosRecomp/shader_recompiler.h b/XenosRecomp/shader_recompiler.h
+index 4f468ec..4418602 100644
+--- a/XenosRecomp/shader_recompiler.h
++++ b/XenosRecomp/shader_recompiler.h
+@@ -52,5 +52,11 @@ struct ShaderRecompiler : StringBuffer
+     void recompile(const TextureFetchInstruction& instr, bool bicubic);
+     void recompile(const AluInstruction& instr);
+ 
+-    void recompile(const uint8_t* shaderData, const std::string_view& include);
++    bool recompile(
++        const uint8_t* shaderData,
++        size_t shaderSize,
++        const std::string_view& include,
++        std::string& error);
++
++    void recompileUnchecked(const uint8_t* shaderData, const std::string_view& include);
+ };
+diff --git a/XenosRecomp/shader_validator.h b/XenosRecomp/shader_validator.h
+new file mode 100644
+index 0000000..96e0aec
+--- /dev/null
++++ b/XenosRecomp/shader_validator.h
+@@ -0,0 +1,20 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <string>
++
++struct XenosShaderValidationLimits
++{
++    size_t maxConstants = 4096;
++    size_t maxDefinitions = 4096;
++    size_t maxVertexElements = 4096;
++    size_t maxInstructions = 1'000'000;
++    size_t maxNameBytes = 1024;
++};
++
++bool ValidateXenosShaderContainer(
++    const uint8_t* data,
++    size_t size,
++    std::string& error,
++    const XenosShaderValidationLimits& limits = {});
+diff --git a/XenosRecomp/shader_validator.cpp b/XenosRecomp/shader_validator.cpp
+new file mode 100644
+index 0000000..d320a1c
+--- /dev/null
++++ b/XenosRecomp/shader_validator.cpp
+@@ -0,0 +1,377 @@
++#include "shader_validator.h"
++
++#include "shader_container_scan.h"
++
++#include <algorithm>
++#include <limits>
++#include <unordered_set>
++
++namespace
++{
++constexpr size_t CONSTANT_TABLE_HEADER_SIZE = 28;
++constexpr size_t CONSTANT_INFO_SIZE = 20;
++constexpr size_t SHADER_HEADER_SIZE = 24;
++constexpr size_t PIXEL_SHADER_HEADER_SIZE = 32;
++constexpr size_t VERTEX_SHADER_HEADER_SIZE = 36;
++constexpr size_t DEFINITION_TABLE_HEADER_SIZE = 20;
++constexpr size_t INSTRUCTION_SIZE = 12;
++constexpr uint32_t REGISTER_SET_BOOL = 0;
++constexpr uint32_t REGISTER_SET_FLOAT4 = 2;
++constexpr uint32_t REGISTER_SET_SAMPLER = 3;
++constexpr uint32_t DECL_USAGE_COUNT = 14;
++
++struct View
++{
++    const uint8_t* data;
++    size_t size;
++
++    bool contains(size_t offset, size_t count) const
++    {
++        return offset <= size && count <= size - offset;
++    }
++
++    uint16_t be16(size_t offset) const
++    {
++        return uint16_t((uint16_t(data[offset]) << 8) | uint16_t(data[offset + 1]));
++    }
++
++    uint32_t be32(size_t offset) const
++    {
++        return ReadXenosBigEndian32(data + offset);
++    }
++};
++
++bool Fail(std::string& error, const char* message)
++{
++    error = message;
++    return false;
++}
++
++bool MultiplyFits(size_t left, size_t right, size_t& result)
++{
++    if (left != 0 && right > std::numeric_limits<size_t>::max() / left)
++        return false;
++    result = left * right;
++    return true;
++}
++
++bool HasBoundedName(
++    const View& table,
++    size_t offset,
++    size_t maxNameBytes)
++{
++    if (offset >= table.size)
++        return false;
++    const size_t available = table.size - offset;
++    const size_t limit = maxNameBytes < available ? maxNameBytes + 1 : available;
++    for (size_t i = 0; i < limit; ++i)
++    {
++        if (table.data[offset + i] == 0)
++            return true;
++    }
++    return false;
++}
++
++bool ValidateConstantTable(
++    const View& virtualData,
++    size_t offset,
++    bool pixelShader,
++    std::string& error,
++    const XenosShaderValidationLimits& limits)
++{
++    if ((offset & 3) != 0 || !virtualData.contains(offset, 4 + CONSTANT_TABLE_HEADER_SIZE))
++        return Fail(error, "constant table header is outside virtual data");
++    const size_t tableSize = virtualData.be32(offset);
++    const size_t tableOffset = offset + 4;
++    if (tableSize < CONSTANT_TABLE_HEADER_SIZE || !virtualData.contains(tableOffset, tableSize))
++        return Fail(error, "constant table byte range is outside virtual data");
++    const View table{ virtualData.data + tableOffset, tableSize };
++    if (table.be32(0) != CONSTANT_TABLE_HEADER_SIZE)
++        return Fail(error, "constant table structure size is unsupported");
++
++    const size_t constantCount = table.be32(12);
++    if (constantCount > limits.maxConstants)
++        return Fail(error, "constant count exceeds the configured limit");
++    const size_t constantInfoOffset = table.be32(16);
++    size_t constantInfoSize = 0;
++    if ((constantInfoOffset & 3) != 0 ||
++        !MultiplyFits(constantCount, CONSTANT_INFO_SIZE, constantInfoSize) ||
++        !table.contains(constantInfoOffset, constantInfoSize))
++    {
++        return Fail(error, "constant-info array is outside the constant table");
++    }
++
++    for (size_t i = 0; i < constantCount; ++i)
++    {
++        const size_t infoOffset = constantInfoOffset + i * CONSTANT_INFO_SIZE;
++        const size_t nameOffset = table.be32(infoOffset);
++        if (!HasBoundedName(table, nameOffset, limits.maxNameBytes))
++            return Fail(error, "constant name is outside the table or unterminated");
++        const uint32_t registerSet = table.be16(infoOffset + 4);
++        const uint32_t registerIndex = table.be16(infoOffset + 6);
++        const uint32_t registerCount = table.be16(infoOffset + 8);
++        if (registerSet > REGISTER_SET_SAMPLER)
++            return Fail(error, "constant uses an unknown register set");
++        if (registerSet == REGISTER_SET_FLOAT4)
++        {
++            const uint32_t registerLimit = pixelShader ? 224 : 256;
++            if (registerIndex > registerLimit || registerCount > registerLimit - registerIndex)
++                return Fail(error, "float constant register range is invalid");
++        }
++        else if (registerSet == REGISTER_SET_BOOL && registerIndex >= 16)
++        {
++            return Fail(error, "boolean constant register index is invalid");
++        }
++    }
++    return true;
++}
++
++bool ValidateDefinitions(
++    const View& virtualData,
++    const View& physicalData,
++    size_t offset,
++    std::string& error,
++    const XenosShaderValidationLimits& limits)
++{
++    if (offset == 0)
++        return true;
++    if ((offset & 3) != 0 || !virtualData.contains(offset, DEFINITION_TABLE_HEADER_SIZE))
++        return Fail(error, "definition table header is outside virtual data");
++    if (virtualData.be32(offset + 16) != DEFINITION_TABLE_HEADER_SIZE)
++        return Fail(error, "definition table structure size is unsupported");
++
++    size_t cursor = offset + DEFINITION_TABLE_HEADER_SIZE;
++    size_t definitionCount = 0;
++    while (true)
++    {
++        if (!virtualData.contains(cursor, 4))
++            return Fail(error, "float definition section has no bounded terminator");
++        if (virtualData.be32(cursor) == 0)
++        {
++            cursor += 4;
++            break;
++        }
++        if (++definitionCount > limits.maxDefinitions)
++            return Fail(error, "definition count exceeds the configured limit");
++        if (!virtualData.contains(cursor, 8))
++            return Fail(error, "float definition record is truncated");
++        const size_t count = virtualData.be16(cursor + 2);
++        const size_t physicalOffset = virtualData.be32(cursor + 4);
++        const size_t valueBytes = ((count + 3) / 4) * 16;
++        if ((physicalOffset & 3) != 0 || !physicalData.contains(physicalOffset, valueBytes))
++            return Fail(error, "float definition values are outside physical data");
++        cursor += 8;
++    }
++
++    while (true)
++    {
++        if (!virtualData.contains(cursor, 4))
++            return Fail(error, "integer definition section has no bounded terminator");
++        if (virtualData.be32(cursor) == 0)
++            break;
++        if (++definitionCount > limits.maxDefinitions)
++            return Fail(error, "definition count exceeds the configured limit");
++        if (!virtualData.contains(cursor, 8))
++            return Fail(error, "integer definition record is truncated");
++        const size_t count = virtualData.be16(cursor + 2);
++        size_t valueBytes = 0;
++        if (!MultiplyFits(count, 4, valueBytes) ||
++            !virtualData.contains(cursor + 8, valueBytes))
++        {
++            return Fail(error, "integer definition values are outside virtual data");
++        }
++        cursor += 8 + valueBytes;
++    }
++    return true;
++}
++
++struct ControlFlow
++{
++    uint32_t low;
++    uint16_t high;
++};
++
++void DecodeControlFlowPair(const View& code, size_t offset, ControlFlow output[2])
++{
++    const uint32_t word0 = code.be32(offset);
++    const uint32_t word1 = code.be32(offset + 4);
++    const uint32_t word2 = code.be32(offset + 8);
++    output[0] = { word0, uint16_t(word1) };
++    output[1] = { (word1 >> 16) | (word2 << 16), uint16_t(word2 >> 16) };
++}
++
++bool IsExecOpcode(uint32_t opcode)
++{
++    return (opcode >= 1 && opcode <= 6) || opcode == 13 || opcode == 14;
++}
++
++bool ValidateMicrocode(
++    const View& code,
++    const std::unordered_set<uint32_t>& vertexElementAddresses,
++    std::string& error,
++    const XenosShaderValidationLimits& limits)
++{
++    if (code.size == 0 || (code.size % INSTRUCTION_SIZE) != 0)
++        return Fail(error, "shader microcode size is not a positive multiple of 12");
++    if (code.size / INSTRUCTION_SIZE > limits.maxInstructions)
++        return Fail(error, "shader instruction count exceeds the configured limit");
++
++    size_t controlFlowSize = code.size;
++    for (size_t offset = 0; offset < controlFlowSize; offset += INSTRUCTION_SIZE)
++    {
++        ControlFlow pair[2];
++        DecodeControlFlowPair(code, offset, pair);
++        for (const ControlFlow& instruction : pair)
++        {
++            const uint32_t opcode = instruction.high >> 12;
++            if (IsExecOpcode(opcode))
++            {
++                const size_t address = instruction.low & 0xFFF;
++                if (address != 0)
++                    controlFlowSize = std::min(controlFlowSize, address * INSTRUCTION_SIZE);
++            }
++        }
++    }
++
++    for (size_t offset = 0; offset < controlFlowSize; offset += INSTRUCTION_SIZE)
++    {
++        ControlFlow pair[2];
++        DecodeControlFlowPair(code, offset, pair);
++        for (const ControlFlow& instruction : pair)
++        {
++            const uint32_t opcode = instruction.high >> 12;
++            if (!IsExecOpcode(opcode))
++                continue;
++            const size_t address = instruction.low & 0xFFF;
++            const size_t count = (instruction.low >> 12) & 0x7;
++            const uint32_t sequence = (instruction.low >> 16) & 0xFFF;
++            if (address > code.size / INSTRUCTION_SIZE ||
++                count > code.size / INSTRUCTION_SIZE - address)
++            {
++                return Fail(error, "control-flow execution range is outside microcode");
++            }
++            for (size_t i = 0; i < count; ++i)
++            {
++                if (((sequence >> (i * 2)) & 1) == 0)
++                    continue;
++                const size_t instructionOffset = (address + i) * INSTRUCTION_SIZE;
++                const uint32_t fetchOpcode = code.be32(instructionOffset) & 0x1F;
++                if (fetchOpcode == 0 &&
++                    vertexElementAddresses.find(uint32_t(address + i)) == vertexElementAddresses.end())
++                {
++                    return Fail(error, "vertex fetch has no matching vertex declaration");
++                }
++            }
++        }
++    }
++    return true;
++}
++}
++
++bool ValidateXenosShaderContainer(
++    const uint8_t* data,
++    size_t size,
++    std::string& error,
++    const XenosShaderValidationLimits& limits)
++{
++    error.clear();
++    if (limits.maxConstants == 0 || limits.maxDefinitions == 0 ||
++        limits.maxVertexElements == 0 || limits.maxInstructions == 0 ||
++        limits.maxNameBytes == 0)
++    {
++        return Fail(error, "shader validation limits must be nonzero");
++    }
++    size_t containerSize = 0;
++    if (!TryGetXenosShaderContainerSize(data, size, containerSize) || containerSize != size)
++        return Fail(error, "input is not one complete bounded Xenos container");
++
++    const View container{ data, size };
++    const size_t virtualSize = container.be32(4);
++    const size_t physicalSize = container.be32(8);
++    const View virtualData{ data, virtualSize };
++    const View physicalData{ data + virtualSize, physicalSize };
++    const bool pixelShader = (container.be32(0) & 1) == 0;
++    const size_t constantTableOffset = container.be32(16);
++    const size_t definitionTableOffset = container.be32(20);
++    const size_t shaderOffset = container.be32(24);
++
++    if (!ValidateConstantTable(
++            virtualData, constantTableOffset, pixelShader, error, limits))
++    {
++        return false;
++    }
++    if (!ValidateDefinitions(
++            virtualData, physicalData, definitionTableOffset, error, limits))
++    {
++        return false;
++    }
++
++    const size_t stageHeaderSize = pixelShader ? PIXEL_SHADER_HEADER_SIZE : VERTEX_SHADER_HEADER_SIZE;
++    if ((shaderOffset & 3) != 0 || !virtualData.contains(shaderOffset, stageHeaderSize))
++        return Fail(error, "shader stage header is outside virtual data");
++    const size_t physicalOffset = virtualData.be32(shaderOffset);
++    const size_t microcodeSize = virtualData.be32(shaderOffset + 4);
++    if ((physicalOffset & 3) != 0 || !physicalData.contains(physicalOffset, microcodeSize))
++        return Fail(error, "shader microcode is outside physical data");
++    const size_t interpolatorCount = (virtualData.be32(shaderOffset + 20) >> 5) & 0x1F;
++    std::unordered_set<uint32_t> vertexElementAddresses;
++
++    if (pixelShader)
++    {
++        size_t interpolatorBytes = 0;
++        if (!MultiplyFits(interpolatorCount, 4, interpolatorBytes) ||
++            !virtualData.contains(shaderOffset + PIXEL_SHADER_HEADER_SIZE, interpolatorBytes))
++        {
++            return Fail(error, "pixel interpolator array is outside virtual data");
++        }
++        for (size_t i = 0; i < interpolatorCount; ++i)
++        {
++            const uint32_t value = virtualData.be32(
++                shaderOffset + PIXEL_SHADER_HEADER_SIZE + i * 4);
++            if (((value >> 4) & 0xF) >= DECL_USAGE_COUNT)
++                return Fail(error, "pixel interpolator uses an invalid declaration usage");
++        }
++    }
++    else
++    {
++        const size_t field18 = virtualData.be32(shaderOffset + 24);
++        const size_t vertexElementCount = virtualData.be32(shaderOffset + 28);
++        if (vertexElementCount > limits.maxVertexElements)
++            return Fail(error, "vertex element count exceeds the configured limit");
++        const size_t arrayOffset = shaderOffset + VERTEX_SHADER_HEADER_SIZE;
++        if (field18 > std::numeric_limits<size_t>::max() - vertexElementCount ||
++            field18 + vertexElementCount >
++                std::numeric_limits<size_t>::max() - interpolatorCount)
++        {
++            return Fail(error, "vertex declaration index arithmetic overflowed");
++        }
++        const size_t arrayElements = field18 + vertexElementCount + interpolatorCount;
++        size_t arrayBytes = 0;
++        if (!MultiplyFits(arrayElements, 4, arrayBytes) ||
++            !virtualData.contains(arrayOffset, arrayBytes))
++        {
++            return Fail(error, "vertex declaration/interpolator array is outside virtual data");
++        }
++        for (size_t i = 0; i < vertexElementCount; ++i)
++        {
++            const uint32_t value = virtualData.be32(
++                arrayOffset + (field18 + i) * 4);
++            if (((value >> 12) & 0xF) >= DECL_USAGE_COUNT)
++                return Fail(error, "vertex element uses an invalid declaration usage");
++            vertexElementAddresses.insert(value & 0xFFF);
++        }
++        for (size_t i = 0; i < interpolatorCount; ++i)
++        {
++            const uint32_t value = virtualData.be32(
++                arrayOffset + (field18 + vertexElementCount + i) * 4);
++            if (((value >> 4) & 0xF) >= DECL_USAGE_COUNT)
++                return Fail(error, "vertex interpolator uses an invalid declaration usage");
++        }
++    }
++
++    return ValidateMicrocode(
++        View{ physicalData.data + physicalOffset, microcodeSize },
++        vertexElementAddresses,
++        error,
++        limits);
++}
+diff --git a/XenosTests/CMakeLists.txt b/XenosTests/CMakeLists.txt
+index fb0104b..004c4f1 100644
+--- a/XenosTests/CMakeLists.txt
++++ b/XenosTests/CMakeLists.txt
+@@ -2,3 +2,10 @@ add_executable(XenosShaderContainerScanTests shader_container_scan_test.cpp)
+ target_include_directories(XenosShaderContainerScanTests PRIVATE
+     "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
+ add_test(NAME XenosShaderContainerScanTests COMMAND XenosShaderContainerScanTests)
++
++add_executable(XenosShaderValidatorTests
++    shader_validator_test.cpp
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp/shader_validator.cpp")
++target_include_directories(XenosShaderValidatorTests PRIVATE
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
++add_test(NAME XenosShaderValidatorTests COMMAND XenosShaderValidatorTests)
+diff --git a/XenosTests/shader_validator_test.cpp b/XenosTests/shader_validator_test.cpp
+new file mode 100644
+index 0000000..bc7fa2c
+--- /dev/null
++++ b/XenosTests/shader_validator_test.cpp
+@@ -0,0 +1,166 @@
++#include "shader_container_scan.h"
++#include "shader_validator.h"
++
++#include <cstdlib>
++#include <iostream>
++#include <string>
++#include <vector>
++
++namespace
++{
++void WriteBigEndian16(uint8_t* output, uint16_t value)
++{
++    output[0] = uint8_t(value >> 8);
++    output[1] = uint8_t(value);
++}
++
++void WriteBigEndian32(uint8_t* output, uint32_t value)
++{
++    output[0] = uint8_t(value >> 24);
++    output[1] = uint8_t(value >> 16);
++    output[2] = uint8_t(value >> 8);
++    output[3] = uint8_t(value);
++}
++
++std::vector<uint8_t> ValidPixelContainer()
++{
++    constexpr uint32_t virtualSize = 160;
++    constexpr uint32_t physicalSize = 12;
++    std::vector<uint8_t> data(virtualSize + physicalSize);
++    WriteBigEndian32(data.data(), XENOS_SHADER_CONTAINER_FLAGS_MAGIC);
++    WriteBigEndian32(data.data() + 4, virtualSize);
++    WriteBigEndian32(data.data() + 8, physicalSize);
++    WriteBigEndian32(data.data() + 16, 36);
++    WriteBigEndian32(data.data() + 20, 128);
++    WriteBigEndian32(data.data() + 24, 96);
++
++    WriteBigEndian32(data.data() + 36, 56);
++    WriteBigEndian32(data.data() + 40, 28);
++    WriteBigEndian32(data.data() + 52, 1);
++    WriteBigEndian32(data.data() + 56, 28);
++    WriteBigEndian32(data.data() + 68, 48);
++    WriteBigEndian16(data.data() + 72, 2);
++    WriteBigEndian16(data.data() + 74, 0);
++    WriteBigEndian16(data.data() + 76, 1);
++    data[88] = 'c';
++    data[89] = '0';
++
++    WriteBigEndian32(data.data() + 100, 12);
++
++    WriteBigEndian32(data.data() + 144, 20);
++    return data;
++}
++
++void Require(bool condition, const char* message)
++{
++    if (!condition)
++    {
++        std::cerr << message << '\n';
++        std::exit(1);
++    }
++}
++
++void RequireRejected(std::vector<uint8_t> data, const char* expected, const char* message)
++{
++    std::string error;
++    Require(!ValidateXenosShaderContainer(data.data(), data.size(), error), message);
++    Require(error.find(expected) != std::string::npos, "validator returned the wrong error");
++}
++}
++
++int main()
++{
++    std::string error;
++    auto valid = ValidPixelContainer();
++    Require(
++        ValidateXenosShaderContainer(valid.data(), valid.size(), error),
++        "valid bounded pixel container was rejected");
++
++    auto constantBounds = valid;
++    WriteBigEndian32(constantBounds.data() + 16, 156);
++    RequireRejected(std::move(constantBounds), "constant table header", "bad constant offset accepted");
++
++    auto constantCount = valid;
++    WriteBigEndian32(constantCount.data() + 52, 5000);
++    RequireRejected(std::move(constantCount), "constant count", "huge constant count accepted");
++
++    auto unalignedConstantInfo = valid;
++    WriteBigEndian32(unalignedConstantInfo.data() + 56, 29);
++    RequireRejected(
++        std::move(unalignedConstantInfo),
++        "constant-info array",
++        "unaligned constant-info array accepted");
++
++    auto unterminatedName = valid;
++    for (size_t i = 88; i < 96; ++i)
++        unterminatedName[i] = 'x';
++    RequireRejected(std::move(unterminatedName), "constant name", "unterminated name accepted");
++
++    auto pixelArray = valid;
++    WriteBigEndian32(pixelArray.data() + 20, 0);
++    WriteBigEndian32(pixelArray.data() + 24, 128);
++    WriteBigEndian32(pixelArray.data() + 148, 1 << 5);
++    RequireRejected(std::move(pixelArray), "pixel interpolator", "truncated pixel array accepted");
++
++    auto invalidUsage = valid;
++    WriteBigEndian32(invalidUsage.data() + 20, 0);
++    WriteBigEndian32(invalidUsage.data() + 116, 1 << 5);
++    WriteBigEndian32(invalidUsage.data() + 128, 14 << 4);
++    RequireRejected(std::move(invalidUsage), "declaration usage", "invalid interpolator usage accepted");
++
++    auto vertexArray = valid;
++    WriteBigEndian32(vertexArray.data(), XENOS_SHADER_CONTAINER_FLAGS_MAGIC | 1);
++    WriteBigEndian32(vertexArray.data() + 120, 100);
++    WriteBigEndian32(vertexArray.data() + 124, 1);
++    RequireRejected(std::move(vertexArray), "vertex declaration", "bad vertex declaration accepted");
++
++    auto missingDefinitionTerminator = valid;
++    missingDefinitionTerminator.resize(168);
++    WriteBigEndian32(missingDefinitionTerminator.data() + 4, 156);
++    WriteBigEndian32(missingDefinitionTerminator.data() + 8, 12);
++    WriteBigEndian32(missingDefinitionTerminator.data() + 148, 1 << 16);
++    WriteBigEndian32(missingDefinitionTerminator.data() + 152, 0);
++    RequireRejected(
++        std::move(missingDefinitionTerminator),
++        "terminator",
++        "missing definition terminator accepted");
++
++    auto definitionPhysical = valid;
++    WriteBigEndian32(definitionPhysical.data() + 148, 4);
++    WriteBigEndian32(definitionPhysical.data() + 152, 64);
++    RequireRejected(std::move(definitionPhysical), "physical data", "bad definition values accepted");
++
++    auto integerDefinition = valid;
++    WriteBigEndian32(integerDefinition.data() + 152, 4);
++    RequireRejected(
++        std::move(integerDefinition),
++        "integer definition values",
++        "truncated integer definition values accepted");
++
++    auto codeSize = valid;
++    WriteBigEndian32(codeSize.data() + 100, 11);
++    RequireRejected(std::move(codeSize), "multiple of 12", "partial instruction accepted");
++
++    auto codeExtent = valid;
++    WriteBigEndian32(codeExtent.data() + 96, 8);
++    RequireRejected(std::move(codeExtent), "microcode", "physical code overrun accepted");
++
++    auto controlFlowExtent = valid;
++    WriteBigEndian32(controlFlowExtent.data() + 160, 10 | (1 << 12));
++    WriteBigEndian32(controlFlowExtent.data() + 164, 0x1000);
++    RequireRejected(
++        std::move(controlFlowExtent),
++        "control-flow execution range",
++        "out-of-range control-flow reference accepted");
++
++    auto missingVertexDeclaration = valid;
++    WriteBigEndian32(missingVertexDeclaration.data(), XENOS_SHADER_CONTAINER_FLAGS_MAGIC | 1);
++    WriteBigEndian32(missingVertexDeclaration.data() + 160, (1 << 12) | (1 << 16));
++    WriteBigEndian32(missingVertexDeclaration.data() + 164, 0x1000);
++    RequireRejected(
++        std::move(missingVertexDeclaration),
++        "vertex fetch",
++        "vertex fetch without a declaration accepted");
++
++    return 0;
++}

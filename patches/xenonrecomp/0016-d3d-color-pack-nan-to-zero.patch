@@ -1,0 +1,28 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -2264,6 +2264,8 @@
+                 constexpr size_t indices[] = { 3, 0, 1, 2 };
+                 println("\t{}.u32[{}] = 0x404000FF;", vTemp(), i);
+-                println("\t{}.f32[{}] = {}.f32[{}] < 3.0f ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
++                // Clamp unordered inputs to the lower endpoint too. Packing
++                // an all-ones NaN is used to construct zero vector masks.
++                println("\t{}.f32[{}] = !({}.f32[{}] >= 3.0f) ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
+                 println("\t{}.u32 {}= uint32_t({}.u8[{}]) << {};", temp(), i == 0 ? "" : "|", vTemp(), i * 4, indices[i] * 8);
+             }
+ 
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+--- a/XenonTests/exact_vector_recompiler.cc
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -193,6 +193,11 @@
+         std::array<uint16_t, 8>{
+             0xFFFF, 0xFFFF, 2, 3, 0xFFFF, 0xFFFF, 0xFFFF, 16 });
+ 
++    ExpectOrdered(
++        "vpkd3d128 unordered input clamps low",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 0 }),
++        { "!(ctx.v3.f32[0] >= 3.0f)", "!(ctx.v3.f32[3] >= 3.0f)" });
++
+     ExpectOrdered(
+         "vpkd3d128 mask1 shift0",
+         Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 0 }),

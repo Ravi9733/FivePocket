@@ -1,0 +1,21 @@
+The base tree host-programs/xenos/base/ is not an untouched upstream tree. Compared on 2026-10-10 with
+XenosRecomp at commit 811240b0137dc9806ae1480d96314cf43941c4b9 (the folders thirdparty/ were not compared):
+  changed by this project:
+    CMakeLists.txt
+    XenosRecomp/CMakeLists.txt
+    XenosRecomp/main.cpp
+    XenosRecomp/shader_common.h
+    XenosRecomp/shader_recompiler.cpp
+    XenosRecomp/shader_recompiler.h
+  added by this project:
+    XenosRecomp/shader_container_scan.h
+    XenosRecomp/shader_validator.cpp
+    XenosRecomp/shader_validator.h
+    XenosRecomp/shader_validator_batch.cpp
+    XenosRecomp/shader_validator_batch.h
+    XenosRecomp/shader_validator_cli.cpp
+    XenosTests/CMakeLists.txt
+    XenosTests/shader_container_scan_test.cpp
+    XenosTests/shader_validator_batch_test.cpp
+    XenosTests/shader_validator_test.cpp
+  the other 11 files outside thirdparty/ are the upstream files.

@@ -1,0 +1,182 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index cf42fde..6a33fcd 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -552,7 +552,34 @@ bool Recompiler::Recompile(
+     if (id == PPC_INST_VUPKHSB128 && insn.operands[2] == 0x60) id = PPC_INST_VUPKHSH128;
+     else if (id == PPC_INST_VUPKLSB128 && insn.operands[2] == 0x60) id = PPC_INST_VUPKLSH128;
+ 
+-    switch (id)
++    // Decode fixed-point traps from their encoding so all disassembler aliases
++    // have identical semantics. RA=0 still reads r0; immediates are sign-extended.
++    const uint32_t trapWord = ByteSwap(*data);
++    const uint32_t trapOp = trapWord >> 26;
++    const uint32_t trapXo = (trapWord >> 1) & 0x3FF;
++    const bool immediateTrap = trapOp == 2 || trapOp == 3;
++    const bool registerTrap = trapOp == 31 && (trapWord & 1) == 0 && (trapXo == 4 || trapXo == 68);
++    if (immediateTrap || registerTrap)
++    {
++        const uint32_t to = (trapWord >> 21) & 31;
++        const bool wide = immediateTrap ? trapOp == 2 : trapXo == 68;
++        if (to == 31)
++        {
++            println("\tPPC_RUNTIME_TRAP();");
++        }
++        else
++        {
++            const uint32_t bits = wide ? 64 : 32;
++            const int32_t imm = int32_t(trapWord & 0xFFFF) - ((trapWord & 0x8000) ? 0x10000 : 0);
++            const uint64_t extended = uint64_t(int64_t(imm));
++            const auto rhs = immediateTrap
++                ? fmt::format("0x{:X}{}", wide ? extended : uint64_t(uint32_t(extended)), wide ? "ULL" : "U")
++                : fmt::format("{}.u{}", r((trapWord >> 11) & 31), bits);
++            println("\tif (PPCTrapCondition<uint{}_t>({}, {}.u{}, {})) PPC_RUNTIME_TRAP();",
++                bits, to, r((trapWord >> 16) & 31), bits, rhs);
++        }
++    }
++    else switch (id)
+     {
+     case PPC_INST_ADD:
+         println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
+@@ -1955,27 +1982,6 @@ bool Recompiler::Recompile(
+         // no op
+         break;
+ 
+-    case PPC_INST_TDLGEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TDLLEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TWI:
+-        // no op
+-        // println("__debugbreak();");
+-        break;
+-
+-    case PPC_INST_TWLGEI:
+-        // no op
+-        break;
+-
+-    case PPC_INST_TWLLEI:
+-        // no op
+-        break;
+-
+     case PPC_INST_VADDFP:
+     case PPC_INST_VADDFP128:
+         printSetFlushMode(true);
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+index 76db818..e17140a 100644
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -114,3 +114,16 @@ endif()
+ 
+ target_compile_definitions(XenonExactVectorTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+ add_test(NAME XenonExactVectorTranslationTests COMMAND XenonExactVectorTranslationTests)
++
++add_executable(XenonTrapTranslationTests
++    "trap_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++target_include_directories(XenonTrapTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonTrapTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonTrapTranslationTests PRIVATE LibXenonAnalyse XenonUtils fmt::fmt tomlplusplus::tomlplusplus xxHash::xxhash)
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonTrapTranslationTests PRIVATE -Wno-switch -Wno-unused-variable -Wno-null-arithmetic)
++endif()
++target_compile_definitions(XenonTrapTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonTrapTranslationTests COMMAND XenonTrapTranslationTests)
+diff --git a/XenonTests/trap_recompiler.cc b/XenonTests/trap_recompiler.cc
+new file mode 100644
+index 0000000..4e253c9
+--- /dev/null
++++ b/XenonTests/trap_recompiler.cc
+@@ -0,0 +1,58 @@
++#include "../XenonRecomp/recompiler.h"
++
++namespace { int trapCount = 0; }
++#define PPC_CONFIG_H_INCLUDED
++#define PPC_RUNTIME_TRAP() (++trapCount)
++#include "../XenonUtils/ppc_context.h"
++
++#include <array>
++#include <iostream>
++#include <string_view>
++
++namespace {
++void Require(bool value, const char* message) {
++    if (!value) { std::cerr << message << '\n'; std::exit(1); }
++}
++std::string Translate(uint32_t encoded) {
++    Recompiler r;
++    Function fn{0x1000, 8};
++    std::array<uint32_t, 2> words{ByteSwap(encoded), 0};
++    ppc_insn insn{};
++    ppc::Disassemble(words.data(), 4, fn.base, insn);
++    Require(insn.opcode != nullptr, "trap encoding did not disassemble");
++    auto table = r.config.switchTables.end();
++    RecompilerLocalVariables locals;
++    CSRState csr = CSRState::Unknown;
++    Require(r.Recompile(fn, fn.base, insn, words.data(), table, locals, csr), "trap did not translate");
++    return r.out;
++}
++void Contains(uint32_t encoded, std::string_view fragment) {
++    const auto text = Translate(encoded);
++    if (text.find(fragment) == std::string::npos) { std::cerr << text; std::exit(1); }
++}
++template <typename U, typename S> void CheckConditions() {
++    const std::array<U, 7> values{0, 1, 2, U(-1), U(-2), U(1) << (sizeof(U)*8-1), (U(1) << (sizeof(U)*8-1))-1};
++    for (uint32_t to = 0; to < 32; ++to) {
++        for (const auto a : values) for (const auto b : values) {
++            S sa, sb;
++            std::memcpy(&sa, &a, sizeof(a)); std::memcpy(&sb, &b, sizeof(b));
++            const bool expected = ((to&16) && sa<sb) || ((to&8) && sa>sb) || ((to&4) && a==b)
++                || ((to&2) && a<b) || ((to&1) && a>b);
++            Require(PPCTrapCondition<U>(to,a,b) == expected, "trap comparison mismatch");
++        }
++    }
++}
++}
++int main() {
++    Contains((3U<<26)|(31U<<21)|22U, "PPC_RUNTIME_TRAP();");
++    Contains((3U<<26)|(16U<<21)|0xFFFFU, "PPCTrapCondition<uint32_t>(16, ctx.r0.u32, 0xFFFFFFFFU)");
++    Contains((2U<<26)|(5U<<21)|(3U<<16)|0xFFFFU, "PPCTrapCondition<uint64_t>(5, ctx.r3.u64, 0xFFFFFFFFFFFFFFFFULL)");
++    Contains((31U<<26)|(4U<<21)|(3U<<16)|(4U<<11)|(4U<<1), "PPCTrapCondition<uint32_t>(4, ctx.r3.u32, ctx.r4.u32)");
++    Contains((31U<<26)|(1U<<21)|(3U<<16)|(4U<<11)|(68U<<1), "PPCTrapCondition<uint64_t>(1, ctx.r3.u64, ctx.r4.u64)");
++    Contains((31U<<26)|(31U<<21)|(4U<<1), "PPC_RUNTIME_TRAP();");
++    Contains((3U<<26)|(3U<<16)|0x7FFFU, "PPCTrapCondition<uint32_t>(0, ctx.r3.u32, 0x7FFFU)");
++    CheckConditions<uint32_t, int32_t>(); CheckConditions<uint64_t, int64_t>();
++    if (PPCTrapCondition<uint32_t>(4, 1, 1)) PPC_RUNTIME_TRAP();
++    if (PPCTrapCondition<uint32_t>(4, 1, 2)) PPC_RUNTIME_TRAP();
++    Require(trapCount == 1, "trap hook count mismatch");
++}
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+index 375283a..60022bf 100644
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -36,6 +36,24 @@
+ #define PPC_RUNTIME_CHECKPOINT() ((void)0)
+ #endif
+ 
++#ifndef PPC_RUNTIME_TRAP
++#define PPC_RUNTIME_TRAP() std::abort()
++#endif
++
++template <typename T>
++inline bool PPCTrapCondition(uint32_t to, T a, T b)
++{
++    static_assert((sizeof(T) == 4 || sizeof(T) == 8) && T(-1) > T(0));
++    // Flipping the sign bit orders unsigned representations as signed values,
++    // without host signed overflow or implementation-defined narrowing casts.
++    constexpr T sign = T(1) << (sizeof(T) * CHAR_BIT - 1);
++    return ((to & 16) && (a ^ sign) < (b ^ sign))
++        || ((to & 8) && (a ^ sign) > (b ^ sign))
++        || ((to & 4) && a == b)
++        || ((to & 2) && a < b)
++        || ((to & 1) && a > b);
++}
++
+ #define PPC_FUNC_PROLOGUE() do { \
+     __builtin_assume(((size_t)base & 0x1F) == 0); \
+     PPC_RUNTIME_CHECKPOINT(); \

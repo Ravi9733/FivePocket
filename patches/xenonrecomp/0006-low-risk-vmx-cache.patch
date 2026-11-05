@@ -1,0 +1,253 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index efe3c1c..8fffe1e 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -870,6 +870,10 @@ bool Recompiler::Recompile(
+         // no op
+         break;
+ 
++    case PPC_INST_DCBST:
++        // Host cache writeback is coherent; retain this as an ordering-free hint.
++        break;
++
+     case PPC_INST_DCBT:
+         // no op
+         break;
+@@ -1273,6 +1277,7 @@ bool Recompiler::Recompile(
+         println("\t{}.s64 = {};", r(insn.operands[0]), int32_t(insn.operands[1] << 16));
+         break;
+ 
++    case PPC_INST_LVEHX:
+     case PPC_INST_LVEWX:
+     case PPC_INST_LVEWX128:
+     case PPC_INST_LVX:
+@@ -1792,6 +1797,15 @@ bool Recompiler::Recompile(
+         println("{}.u32, {}.u16);", r(insn.operands[2]), r(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_STVEBX:
++        // NOTE: accounting for the full vector reversal here.
++        print("\t{} = ", ea());
++        if (insn.operands[1] != 0)
++            print("{}.u32 + ", r(insn.operands[1]));
++        println("{}.u32;", r(insn.operands[2]));
++        println("\tPPC_STORE_U8({}, {}.u8[15 - ({} & 0xF)]);", ea(), v(insn.operands[0]), ea());
++        break;
++
+     case PPC_INST_STVEHX:
+         // TODO: vectorize
+         // NOTE: accounting for the full vector reversal here
+@@ -2103,6 +2117,12 @@ bool Recompiler::Recompile(
+              println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u16), 0xFFFF);", cr(6), v(insn.operands[0]));
+         break;
+ 
++    case PPC_INST_VCMPGTUW:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_cmpgt_epu32(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.setFromMask(simde_mm_load_si128((simde__m128i*){}.u32), 0xFFFF);", cr(6), v(insn.operands[0]));
++        break;
++
+     case PPC_INST_VEXPTEFP:
+     case PPC_INST_VEXPTEFP128:
+         // TODO: vectorize
+@@ -2190,6 +2210,11 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_ps({}.f32, simde_mm_xor_ps(simde_mm_sub_ps(simde_mm_mul_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[3]));
+         break;
+ 
++    case PPC_INST_VNOR:
++    case PPC_INST_VNOR128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_x_mm_not_si128(simde_mm_or_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VOR:
+     case PPC_INST_VOR128:
+         print("\tsimde_mm_store_si128((simde__m128i*){}.u8, ", v(insn.operands[0]));
+@@ -2309,6 +2334,13 @@ bool Recompiler::Recompile(
+             println("\t{}.s8[{}] = {}.s8[{}] >> ({}.u8[{}] & 0x7);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[2]), i);
+         break;
+ 
++    case PPC_INST_VSRB:
++        // TODO: vectorize, ensure endianness is correct
++        for (size_t i = 0; i < 16; i++)
++            println("\t{}.u8[{}] = {}.u8[{}] >> ({}.u8[{}] & 0x7);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[2]), i);
++        println("\t{} = {};", v(insn.operands[0]), vTemp());
++        break;
++
+     case PPC_INST_VSRAH:
+         // TODO: vectorize, ensure endianness is correct
+         for (size_t i = 0; i < 8; i++)
+@@ -2552,6 +2584,10 @@ bool Recompiler::Recompile(
+         println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_sub_epi16(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
+         break;
+ 
++    case PPC_INST_VSUBUWM:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u32, simde_mm_sub_epi32(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32)));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]));
++        break;
++
+     case PPC_INST_VUPKD3D128:
+         // TODO: vectorize somehow?
+         // NOTE: handling vector reversal here too
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+index d3a3d23..fff5b42 100644
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -679,6 +679,12 @@ inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b)
+     return simde_mm_cmpgt_epi16(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
+ }
+ 
++inline simde__m128i simde_mm_cmpgt_epu32(simde__m128i a, simde__m128i b)
++{
++    simde__m128i c = simde_mm_set1_epi32(INT32_MIN);
++    return simde_mm_cmpgt_epi32(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
++}
++
+ inline simde__m128i simde_mm_vctsxs(simde__m128 src1)
+ {
+     simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -66,3 +66,27 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+ 
+ target_compile_definitions(XenonCarryTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
+ add_test(NAME XenonCarryTranslationTests COMMAND XenonCarryTranslationTests)
++
++add_executable(XenonLowRiskTranslationTests
++    "low_risk_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonLowRiskTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonLowRiskTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonLowRiskTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonLowRiskTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonLowRiskTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonLowRiskTranslationTests COMMAND XenonLowRiskTranslationTests)
+diff --git a/XenonTests/low_risk_recompiler.cc b/XenonTests/low_risk_recompiler.cc
+new file mode 100644
+index 0000000..7366b89
+--- /dev/null
++++ b/XenonTests/low_risk_recompiler.cc
+@@ -0,0 +1,110 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++}
++
++int main()
++{
++    Translate(PPC_INST_DCBST, "dcbst", { 3, 4 });
++
++    ExpectOrdered(
++        "vnor128",
++        Translate(PPC_INST_VNOR128, "vnor128", { 5, 3, 4 }),
++        { "simde_x_mm_not_si128(",
++          "simde_mm_or_si128(",
++          "ctx.v3.u8",
++          "ctx.v4.u8" });
++
++    ExpectOrdered(
++        "vcmpgtuw record",
++        Translate(PPC_INST_VCMPGTUW, "vcmpgtuw.", { 5, 3, 4 }),
++        { "simde_mm_cmpgt_epu32(",
++          "ctx.v3.u32",
++          "ctx.v4.u32",
++          "ctx.cr6.setFromMask(",
++          "ctx.v5.u32",
++          "0xFFFF" });
++
++    ExpectOrdered(
++        "vsubuwm",
++        Translate(PPC_INST_VSUBUWM, "vsubuwm", { 5, 3, 4 }),
++        { "simde_mm_sub_epi32(", "ctx.v3.u32", "ctx.v4.u32" });
++
++    ExpectOrdered(
++        "vsrb alias",
++        Translate(PPC_INST_VSRB, "vsrb", { 3, 3, 4 }),
++        { "vTemp.u8[0] = ctx.v3.u8[0] >> (ctx.v4.u8[0] & 0x7);",
++          "vTemp.u8[15] = ctx.v3.u8[15] >> (ctx.v4.u8[15] & 0x7);",
++          "ctx.v3 = vTemp;" });
++
++    ExpectOrdered(
++        "lvehx",
++        Translate(PPC_INST_LVEHX, "lvehx", { 5, 3, 4 }),
++        { "simde_mm_load_si128((simde__m128i*)(base + ((ctx.r3.u32 + ctx.r4.u32) & ~0xF)))",
++          "VectorMaskL" });
++
++    ExpectOrdered(
++        "stvebx",
++        Translate(PPC_INST_STVEBX, "stvebx", { 5, 3, 4 }),
++        { "ea = ctx.r3.u32 + ctx.r4.u32;",
++          "PPC_STORE_U8(ea, ctx.v5.u8[15 - (ea & 0xF)]);" });
++
++    return 0;
++}

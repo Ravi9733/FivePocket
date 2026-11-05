@@ -1,0 +1,14 @@
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -273,6 +273,11 @@
+ #endif
+ 
+     auto findResult = samplers.find(instr.constIndex);
++    // Xenos vertex texture fetches use fetch constants 16..31 for vertex sampler
++    // registers 0..15 (observed in GTA V: CoronasDepthMapSampler s0 -> vfetch 16,
++    // TintPaletteSampler s2 -> 18), while the constant table names the register.
++    if (findResult == samplers.end() && !isPixelShader && instr.constIndex >= 16)
++        findResult = samplers.find(instr.constIndex - 16);
+     if (findResult != samplers.end())
+     {
+         constNamePtr = findResult->second;

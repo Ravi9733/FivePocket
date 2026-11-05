@@ -1,0 +1,66 @@
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -17,6 +17,40 @@
+ namespace recomp::vmx {
+ 
++// Clamp the positive biased float representation without changing host FP state.
++// Matches max(input, minimum) followed by min(result, maximum): unordered inputs
++// select the minimum, including signaling NaNs and negative NaNs.
++constexpr std::uint32_t clampNormPacked32Component(std::uint32_t bits,
++        std::uint32_t minimum, std::uint32_t maximum) {
++    if ((bits & 0x80000000u) || bits > 0x7f800000u || bits < minimum)
++        return minimum;
++    return bits > maximum ? maximum : bits;
++}
++
++// VPKD3D128 type2. Xenia 95a5c3ee PACK::EmitUINT_2101010 clamps XYZ to
++// 3.0 + [-511,511]*2^-22 and W to 3.0 + [0,3]*2^-22, then retains their
++// low bits. The packed word is replicated before the instruction's lane merge.
++template<unsigned Mask, unsigned Shift>
++inline void packNormPacked32(std::uint32_t (&dst)[4], const std::uint32_t (&src)[4]) {
++    static_assert(Mask >= 1 && Mask <= 3 && Shift <= 3);
++    std::uint32_t packed = 0;
++    for (unsigned component = 0; component < 4; ++component) {
++        const auto minimum = component == 3 ? 0x40400000u : 0x403ffe01u;
++        const auto maximum = component == 3 ? 0x40400003u : 0x404001ffu;
++        const auto mask = component == 3 ? 3u : 1023u;
++        packed |= (clampNormPacked32Component(src[3 - component], minimum, maximum)
++                & mask) << (component * 10);
++    }
++    // Compute all components before writing VD, which may also be VB.
++    if constexpr (Mask == 3 && Shift == 3) {
++        dst[0] = packed;
++    } else {
++        dst[Shift] = packed;
++        if constexpr (Mask != 1 && Shift < 3)
++            dst[Shift + 1] = packed;
++    }
++}
++
+ // Integer implementation of the F16C round-toward-zero behavior used by
+ // Xenia's FLOAT16 pack backend. Independent of the host FP rounding/flush mode.
+ constexpr std::uint16_t floatToHalfRtz(std::uint32_t bits) {
+     const auto sign = (bits >> 16) & 0x8000u;
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -2248,9 +2248,17 @@
+     case PPC_INST_VPKD3D128:
+         // TODO: vectorize somehow?
+         // NOTE: handling vector reversal here too
+-        printSetFlushMode(true);
++        if (insn.operands[2] != 2)
++            printSetFlushMode(true);
+         switch (insn.operands[2])
+         {
++        case 2: // NORMPACKED32: biased bits, saturated before masked lane merge.
++            if (insn.operands[3] >= 1 && insn.operands[3] <= 3 && insn.operands[4] <= 3)
++                println("\trecomp::vmx::packNormPacked32<{}, {}>({}.u32, {}.u32);", insn.operands[3], insn.operands[4], v(insn.operands[0]), v(insn.operands[1]));
++            else
++                println("\t__builtin_debugtrap();");
++            break;
++
+         case 3: // FLOAT16_2
+         case 5: // FLOAT16_4
+             if (insn.operands[3] >= 1 && insn.operands[3] <= 3 && insn.operands[4] <= 3)

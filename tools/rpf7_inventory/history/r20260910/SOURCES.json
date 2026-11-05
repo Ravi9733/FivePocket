@@ -1,0 +1,55 @@
+{
+ "files": {
+  "inline_shader_translation.py": {
+   "bytes": 7116,
+   "commit": "78faa2105cb86418c641f4f3036936b4c6e5c61c",
+   "committed": "2026-09-10 05:03 -0400",
+   "git_blob": "0eb2cfb7d6f660fd30a448af1b2f69cff81fc2e5",
+   "sha256": "96141f5aa41ee4d2329e56564a33789eb46bd429c547453e0259efef110a5190"
+  },
+  "pixel_sample_dataflow.py": {
+   "bytes": 24072,
+   "commit": "8ac3931f2826d9a1c53c2f5963ebcc72a8049e78",
+   "committed": "2026-09-10 14:10 -0400",
+   "git_blob": "6110433b7cf4164181efbdc78c58382338d31bba",
+   "sha256": "5ad1ca3bb4cb453fc241248ee18b3d71fc52802d871d1495279f5eb13edaa52e"
+  },
+  "raw_shader_analysis.py": {
+   "bytes": 17252,
+   "commit": "78faa2105cb86418c641f4f3036936b4c6e5c61c",
+   "committed": "2026-09-10 05:03 -0400",
+   "git_blob": "9fac1c8a622d6fa575e3138490616aa31286160b",
+   "sha256": "93556393d475b3d413c469e4576e65e4231767e58a134353d0dacd3488acf26a"
+  },
+  "scalar_constant.py": {
+   "bytes": 1979,
+   "commit": "8ac3931f2826d9a1c53c2f5963ebcc72a8049e78",
+   "committed": "2026-09-10 14:10 -0400",
+   "git_blob": "1dc98774a1a8e1b6991b152a60b1aa3e75aa0050",
+   "sha256": "4728479804a7767e668686f998e301af749d44d959d6767dfbbfe23802bac213"
+  },
+  "scalar_mul_const.py": {
+   "bytes": 1357,
+   "commit": "78faa2105cb86418c641f4f3036936b4c6e5c61c",
+   "committed": "2026-09-10 05:03 -0400",
+   "git_blob": "346b3e14b06ee06205570a40aabe3d0ec8805ee1",
+   "sha256": "847c6a1d0e1cd3598cabeda89b7190e90e7336dcceeb91024324fe1c87f60a17"
+  },
+  "unorm8_vertex_fetch.py": {
+   "bytes": 2562,
+   "commit": "78faa2105cb86418c641f4f3036936b4c6e5c61c",
+   "committed": "2026-09-10 05:03 -0400",
+   "git_blob": "875ba219db1cf5dd33e4220f068161520f6b63ac",
+   "sha256": "b4f7bca45bd101ad8690db4a1677a3c1b0a8b1e898148dd2cb3a2d05a6a8dcee"
+  },
+  "vertex_arithmetic_dataflow.py": {
+   "bytes": 21385,
+   "commit": "8ac3931f2826d9a1c53c2f5963ebcc72a8049e78",
+   "committed": "2026-09-10 14:10 -0400",
+   "git_blob": "c68df6f213aa7622f887381b009a39aa6e5e1dbb",
+   "sha256": "96f61d56a75f6fca1d75d2897f869bf206022fac1c66e9654762ac78bdadb0dd"
+  }
+ },
+ "revision": "r20260910",
+ "schema": "translator-revision/1"
+}

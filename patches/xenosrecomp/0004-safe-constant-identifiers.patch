@@ -1,0 +1,58 @@
+diff --git a/XenosRecomp/shader_validator.cpp b/XenosRecomp/shader_validator.cpp
+--- a/XenosRecomp/shader_validator.cpp
++++ b/XenosRecomp/shader_validator.cpp
+@@ -66,8 +66,14 @@ bool HasBoundedName(
+     const size_t limit = maxNameBytes < available ? maxNameBytes + 1 : available;
+     for (size_t i = 0; i < limit; ++i)
+     {
+-        if (table.data[offset + i] == 0)
+-            return true;
++        const uint8_t value = table.data[offset + i];
++        if (value == 0)
++            return i != 0;
++        const bool letter = (value >= 'A' && value <= 'Z') ||
++            (value >= 'a' && value <= 'z') || value == '_';
++        const bool digit = value >= '0' && value <= '9';
++        if (!letter && !(i != 0 && digit))
++            return false;
+     }
+     return false;
+ }
+@@ -105,7 +111,7 @@ bool ValidateConstantTable(
+         const size_t infoOffset = constantInfoOffset + i * CONSTANT_INFO_SIZE;
+         const size_t nameOffset = table.be32(infoOffset);
+         if (!HasBoundedName(table, nameOffset, limits.maxNameBytes))
+-            return Fail(error, "constant name is outside the table or unterminated");
++            return Fail(error, "constant name is not a bounded ASCII identifier");
+         const uint32_t registerSet = table.be16(infoOffset + 4);
+         const uint32_t registerIndex = table.be16(infoOffset + 6);
+         const uint32_t registerCount = table.be16(infoOffset + 8);
+diff --git a/XenosTests/shader_validator_test.cpp b/XenosTests/shader_validator_test.cpp
+--- a/XenosTests/shader_validator_test.cpp
++++ b/XenosTests/shader_validator_test.cpp
+@@ -104,6 +104,25 @@ int main()
+         unterminatedName[i] = 'x';
+     RequireRejected(std::move(unterminatedName), "constant name", "unterminated name accepted");
+ 
++    for (uint32_t value = 0; value < 256; ++value)
++    {
++        auto name = valid;
++        name[88] = uint8_t(value);
++        const bool letter = (value >= 'A' && value <= 'Z') ||
++            (value >= 'a' && value <= 'z') || value == '_';
++        Require(ValidateXenosShaderContainer(name.data(), name.size(), error) == letter,
++            "constant identifier first-byte policy mismatch");
++        name = valid;
++        name[89] = uint8_t(value);
++        const bool digit = value >= '0' && value <= '9';
++        Require(ValidateXenosShaderContainer(name.data(), name.size(), error) ==
++                (value == 0 || letter || digit),
++            "constant identifier continuation-byte policy mismatch");
++    }
++    auto directive = valid;
++    directive[89] = '\n';
++    RequireRejected(std::move(directive), "constant name", "directive injection accepted");
++
+     auto pixelArray = valid;
+     WriteBigEndian32(pixelArray.data() + 20, 0);
+     WriteBigEndian32(pixelArray.data() + 24, 128);

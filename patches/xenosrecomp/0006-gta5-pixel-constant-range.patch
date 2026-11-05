@@ -1,0 +1,61 @@
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1360,7 +1360,7 @@
+ 
+             if (constantInfo->registerCount > 1)
+             {
+-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
++                uint32_t tailCount = 256 - constantInfo->registerIndex; // Both stages address 256 float4 constants.
+ 
+                 println("#define {}(INDEX) selectWrapper((INDEX) < {}, XENOS_LOAD_FLOAT4({}, ({} + min(INDEX, {})) * 16), 0.0)",
+                     constantName, tailCount, shaderName, constantInfo->registerIndex.get(), tailCount - 1);
+@@ -1429,7 +1429,7 @@
+ 
+             if (constantInfo->registerCount > 1)
+             {
+-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
++                uint32_t tailCount = 256 - constantInfo->registerIndex; // Both stages address 256 float4 constants.
+ 
+                 println("#define {}(INDEX) selectWrapper((INDEX) < {}, (*(reinterpret_cast<device float4*>(g_PushConstants.{}ShaderConstants + ({} + min(INDEX, {})) * 16))), 0.0)",
+                     constantName, tailCount, shaderName, constantInfo->registerIndex.get(), tailCount - 1);
+@@ -1487,7 +1487,7 @@
+ 
+             if (constantInfo->registerCount > 1)
+             {
+-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
++                uint32_t tailCount = 256 - constantInfo->registerIndex; // Both stages address 256 float4 constants.
+                 println("#define {0}(INDEX) selectWrapper((INDEX) < {1}, {0}[min(INDEX, {2})], 0.0)", constantName, tailCount, tailCount - 1);
+             }
+         }
+--- a/XenosRecomp/shader_validator.cpp
++++ b/XenosRecomp/shader_validator.cpp
+@@ -120,7 +120,9 @@
+             return Fail(error, "constant uses an unknown register set");
+         if (registerSet == REGISTER_SET_FLOAT4)
+         {
+-            const uint32_t registerLimit = pixelShader ? 224 : 256;
++            // Xenos exposes 256 float4 constants to each stage; GTA V pixel shaders
++            // read up to c255 (the 224 cap was an Unleashed Recompiled runtime limit).
++            const uint32_t registerLimit = 256;
+             if (registerIndex > registerLimit || registerCount > registerLimit - registerIndex)
+                 return Fail(error, "float constant register range is invalid");
+         }
+--- a/XenosTests/shader_validator_test.cpp
++++ b/XenosTests/shader_validator_test.cpp
+@@ -76,6 +76,16 @@
+         ValidateXenosShaderContainer(valid.data(), valid.size(), error),
+         "valid bounded pixel container was rejected");
+ 
++    // Pixel shaders address all 256 float4 constants (GTA V reads c254/c255).
++    auto lastPixelConstant = valid;
++    WriteBigEndian16(lastPixelConstant.data() + 74, 255);
++    Require(ValidateXenosShaderContainer(lastPixelConstant.data(), lastPixelConstant.size(), error),
++        "pixel constant c255 was rejected");
++    auto pastPixelConstants = valid;
++    WriteBigEndian16(pastPixelConstants.data() + 74, 250);
++    WriteBigEndian16(pastPixelConstants.data() + 76, 7);
++    RequireRejected(std::move(pastPixelConstants), "float constant register range", "pixel constants past c255 accepted");
++
+     auto constantBounds = valid;
+     WriteBigEndian32(constantBounds.data() + 16, 156);
+     RequireRejected(std::move(constantBounds), "constant table header", "bad constant offset accepted");

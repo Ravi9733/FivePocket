@@ -1,0 +1,17 @@
+# Upstream files that carry a key as their upstream publishes it (scan_secrets.py --allow; publish decision 1).
+# Format: whole-file SHA-256, the path inside the download, the reason. Only these exact bytes are waived, and only
+# for key findings. Our own files never contain a key. When the builder's host programs are rebuilt (from upstream
+# XenonRecomp 16ee5918 plus patches/ or tools/own_disc/generator/, diff_sha256 a53bbd42 in sources/sources.json),
+# add the new binaries' digests here with the builder version in the path column.
+#
+# Upstream sources (builder download, sources/XenonRecomp = upstream 16ee5918 + our patch, which leaves these unchanged)
+d75db078add62416cb465f06550c89e470382895d098ee8e95ad49b6901fc9b8 sources/XenonRecomp/XenonUtils/xex.h upstream XenonRecomp (MIT) declares Xex2RetailKey here; unchanged by our patch
+fcb86bc2d46d26c106bca62281be8b0e161daf979bb80b6c35a2bcf3b7b74dec sources/XenonRecomp/thirdparty/tiny-AES-c/test.c upstream tiny-AES-c (Unlicense) test vectors from FIPS-197 and NIST SP 800-38A, not console keys
+#
+# Host programs built from that source (v852 builder); xex_image is ours and links upstream XenonUtils/xex.cpp
+f017b43dd36ba19fc46ee3aa47c09f6b3eca8780077b60762036890cf776fe6f builder/host-tools/XenonRecomp.exe upstream XenonRecomp built for win32-x86_64 (v852 package-2); the key comes from upstream xex.h
+95910f2851a65154a941be3292887dca48427a1e115380394d8c045eb1bbc0fa builder/host-tools/xex_image.exe xex_image for win32-x86_64 (v852 package-2), linking upstream XenonUtils; the key comes from upstream xex.h
+823b9530ce40a3c31f814be9f517101b9b32f72e3a1059b72df5e076ad114aed builder/host-tools/XenonRecomp upstream XenonRecomp built for darwin-arm64 (portable host tools); the key comes from upstream xex.h
+e9be42ae2e1a9ae338ad58c2a968224370abd58eb589daa8a57b1e03683817b4 builder/host-tools/xex_image xex_image for darwin-arm64 (portable host tools), linking upstream XenonUtils; the key comes from upstream xex.h
+0a3be99591b988045c35e30549de43e3770f8b6d619eb02e5aa9ce13c5293a87 builder/host-tools/xex_image.exe xex_image for win32-x86_64 (Thor -3n, package-7), linking upstream XenonUtils; the key comes from upstream xex.h
+a651b17a33c28fabb6dd0a47e3075b70b1397575dfc0d66cba4a9d026ba3ee4c builder/host-tools/xex_image.exe xex_image for win32-x86_64 (single screen -3n, package-8), linking upstream XenonUtils; the key comes from upstream xex.h

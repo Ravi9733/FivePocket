@@ -1,0 +1,23 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Pass 5: the midpoint frame: v bilinear between block centres (b * 32 + 16); mid(x) = (prev(x + v/2) + cur(x - v/2)) / 2,
+// the current frame's pixel where the two samples disagree strongly (occlusion or a wrong vector).
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "fi_common.glsl"
+vec2 blockMotion(ivec2 b) { b = clamp(b, ivec2(0), pc.blocks - 1); return vec2(motion[b.y * pc.blocks.x + b.x]); }
+vec4 load(bool fromPrev, ivec2 p) { return fromPrev ? imageLoad(prevFrame, p) : imageLoad(curFrame, p); }
+vec4 sampleBilinear(bool fromPrev, vec2 p) {
+    p = clamp(p, vec2(0.0), vec2(pc.size - 1));
+    ivec2 i = ivec2(floor(p)); vec2 f = p - vec2(i); ivec2 j = min(i + 1, pc.size - 1);
+    return mix(mix(load(fromPrev, i), load(fromPrev, ivec2(j.x, i.y)), f.x), mix(load(fromPrev, ivec2(i.x, j.y)), load(fromPrev, j), f.x), f.y);
+}
+void main() {
+    ivec2 x = ivec2(gl_GlobalInvocationID.xy);
+    if (x.x >= pc.size.x || x.y >= pc.size.y) return;
+    vec2 g = (vec2(x) - 16.0) / 32.0; ivec2 g0 = ivec2(floor(g)); vec2 gf = g - vec2(g0);
+    vec2 v = mix(mix(blockMotion(g0), blockMotion(g0 + ivec2(1, 0)), gf.x),
+                 mix(blockMotion(g0 + ivec2(0, 1)), blockMotion(g0 + ivec2(1, 1)), gf.x), gf.y);
+    vec4 p = sampleBilinear(true, vec2(x) + 0.5 * v), c = sampleBilinear(false, vec2(x) - 0.5 * v);
+    vec4 m = dot(abs(p.rgb - c.rgb), vec3(1.0 / 3.0)) > 0.25 ? c : 0.5 * (p + c);
+    imageStore(midFrame, x, vec4(m.rgb, 1.0));
+}

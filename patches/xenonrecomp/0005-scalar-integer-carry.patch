@@ -1,0 +1,241 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index cfb4fc6..efe3c1c 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -560,6 +560,20 @@ bool Recompiler::Recompile(
+             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
+         break;
+ 
++    case PPC_INST_ADDC:
++    case PPC_INST_ADDCO:
++        println("\t{}.u8 = {}.u32 + {}.u32 < {}.u32;", temp(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]));
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = ((~({}.u32 ^ {}.u32) & ({}.u32 ^ ({}.u32 + {}.u32))) >> 31) != 0;", xer(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]), r(insn.operands[1]), r(insn.operands[2]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_ADDE:
+         println("\t{}.u8 = ({}.u32 + {}.u32 < {}.u32) | ({}.u32 + {}.u32 + {}.ca < {}.ca);", temp(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]), r(insn.operands[1]), r(insn.operands[2]), xer(), xer());
+         println("\t{}.u64 = {}.u64 + {}.u64 + {}.ca;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]), xer());
+@@ -589,6 +603,20 @@ bool Recompiler::Recompile(
+         println("{};", static_cast<int32_t>(insn.operands[2] << 16));
+         break;
+ 
++    case PPC_INST_ADDME:
++    case PPC_INST_ADDMEO:
++        println("\t{}.u8 = ({}.u32 != 0) | {}.ca;", temp(), r(insn.operands[1]), xer());
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = !{}.ca && {}.s32 == INT32_MIN;", xer(), xer(), r(insn.operands[1]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = {}.u64 + {}.ca - 1;", r(insn.operands[0]), r(insn.operands[1]), xer());
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_ADDZE:
+         println("\t{}.s64 = {}.s64 + {}.ca;", temp(), r(insn.operands[1]), xer());
+         println("\t{}.ca = {}.u32 < {}.u32;", xer(), temp(), r(insn.operands[1]));
+@@ -1883,6 +1911,20 @@ bool Recompiler::Recompile(
+             println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
+         break;
+ 
++    case PPC_INST_SUBFZE:
++    case PPC_INST_SUBFZEO:
++        println("\t{}.u8 = ~{}.u32 + {}.ca < {}.ca;", temp(), r(insn.operands[1]), xer(), xer());
++        if (insn.instruction & (1U << 10))
++        {
++            println("\t{}.ov = {}.ca && {}.s32 == INT32_MIN;", xer(), xer(), r(insn.operands[1]));
++            println("\t{}.so |= {}.ov;", xer(), xer());
++        }
++        println("\t{}.u64 = ~{}.u64 + {}.ca;", r(insn.operands[0]), r(insn.operands[1]), xer());
++        println("\t{}.ca = {}.u8;", xer(), temp());
++        if (insn.instruction & 1U)
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
+     case PPC_INST_SUBFIC:
+         println("\t{}.ca = {}.u32 <= {};", xer(), r(insn.operands[1]), insn.operands[2]);
+         println("\t{}.s64 = {} - {}.s64;", r(insn.operands[0]), int32_t(insn.operands[2]), r(insn.operands[1]));
+diff --git a/XenonTests/CMakeLists.txt b/XenonTests/CMakeLists.txt
+index 8beb23c..e27c38d 100644
+--- a/XenonTests/CMakeLists.txt
++++ b/XenonTests/CMakeLists.txt
+@@ -18,3 +18,27 @@ if(TEST_FILES)
+             "-Wno-unused-variable"
+     )
+ endif()
++
++add_executable(XenonCarryTranslationTests
++    "carry_recompiler.cc"
++    "${XENONRECOMP_ROOT}/recompiler.cpp"
++    "${XENONRECOMP_ROOT}/recompiler_config.cpp")
++
++target_include_directories(XenonCarryTranslationTests PRIVATE ${XENONRECOMP_ROOT})
++target_precompile_headers(XenonCarryTranslationTests PRIVATE "${XENONRECOMP_ROOT}/pch.h")
++target_link_libraries(XenonCarryTranslationTests PRIVATE
++    LibXenonAnalyse
++    XenonUtils
++    fmt::fmt
++    tomlplusplus::tomlplusplus
++    xxHash::xxhash)
++
++if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
++    target_compile_options(XenonCarryTranslationTests PRIVATE
++        -Wno-switch
++        -Wno-unused-variable
++        -Wno-null-arithmetic)
++endif()
++
++target_compile_definitions(XenonCarryTranslationTests PRIVATE _CRT_SECURE_NO_WARNINGS)
++add_test(NAME XenonCarryTranslationTests COMMAND XenonCarryTranslationTests)
+diff --git a/XenonTests/carry_recompiler.cc b/XenonTests/carry_recompiler.cc
+new file mode 100644
+index 0000000..87f5942
+--- /dev/null
++++ b/XenonTests/carry_recompiler.cc
+@@ -0,0 +1,136 @@
++#include "../XenonRecomp/recompiler.h"
++
++#include <array>
++#include <initializer_list>
++#include <iostream>
++#include <string_view>
++
++namespace
++{
++std::string Translate(
++    int instructionId,
++    const char* name,
++    std::initializer_list<uint32_t> operands,
++    uint32_t instructionBits = 0)
++{
++    Recompiler recompiler;
++    Function function{ 0x1000, 8 };
++    powerpc_opcode opcode{};
++    opcode.name = name;
++    opcode.id = instructionId;
++
++    ppc_insn instruction{};
++    instruction.opcode = &opcode;
++    instruction.instruction = instructionBits;
++    std::copy(operands.begin(), operands.end(), instruction.operands);
++
++    std::array<uint32_t, 2> data{};
++    auto switchTable = recompiler.config.switchTables.end();
++    RecompilerLocalVariables localVariables;
++    CSRState csrState = CSRState::Unknown;
++    if (!recompiler.Recompile(
++            function,
++            function.base,
++            instruction,
++            data.data(),
++            switchTable,
++            localVariables,
++            csrState))
++    {
++        std::cerr << name << " was not supported but was rejected\n";
++        std::exit(1);
++    }
++    return recompiler.out;
++}
++
++void ExpectOrdered(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    size_t cursor = 0;
++    for (const auto fragment : fragments)
++    {
++        const size_t position = output.find(fragment, cursor);
++        if (position == std::string::npos)
++        {
++            std::cerr << name << " did not emit '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++        cursor = position + fragment.size();
++    }
++}
++
++void ExpectAbsent(
++    std::string_view name,
++    const std::string& output,
++    std::initializer_list<std::string_view> fragments)
++{
++    for (const auto fragment : fragments)
++    {
++        if (output.find(fragment) != std::string::npos)
++        {
++            std::cerr << name << " unexpectedly emitted '" << fragment << "':\n" << output;
++            std::exit(1);
++        }
++    }
++}
++}
++
++int main()
++{
++    const auto addc = Translate(PPC_INST_ADDC, "addc", { 3, 3, 4 });
++    ExpectOrdered(
++        "addc alias",
++        addc,
++        { "temp.u8 = ctx.r3.u32 + ctx.r4.u32 < ctx.r3.u32;",
++          "ctx.r3.u64 = ctx.r3.u64 + ctx.r4.u64;",
++          "ctx.xer.ca = temp.u8;" });
++    ExpectAbsent("addc flags", addc, { "ctx.xer.ov", "ctx.cr0.compare" });
++
++    ExpectOrdered(
++        "addco record",
++        Translate(PPC_INST_ADDCO, "addco.", { 5, 3, 4 }, (1U << 10) | 1U),
++        { "temp.u8 = ctx.r3.u32 + ctx.r4.u32 < ctx.r3.u32;",
++          "ctx.xer.ov = ((~(ctx.r3.u32 ^ ctx.r4.u32)",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.r4.u64;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    ExpectOrdered(
++        "addme",
++        Translate(PPC_INST_ADDME, "addme", { 5, 3 }),
++        { "temp.u8 = (ctx.r3.u32 != 0) | ctx.xer.ca;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.xer.ca - 1;",
++          "ctx.xer.ca = temp.u8;" });
++
++    ExpectOrdered(
++        "addmeo record",
++        Translate(PPC_INST_ADDMEO, "addmeo.", { 5, 3 }, (1U << 10) | 1U),
++        { "temp.u8 = (ctx.r3.u32 != 0) | ctx.xer.ca;",
++          "ctx.xer.ov = !ctx.xer.ca && ctx.r3.s32 == INT32_MIN;",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ctx.r3.u64 + ctx.xer.ca - 1;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    ExpectOrdered(
++        "subfze",
++        Translate(PPC_INST_SUBFZE, "subfze", { 5, 3 }),
++        { "temp.u8 = ~ctx.r3.u32 + ctx.xer.ca < ctx.xer.ca;",
++          "ctx.r5.u64 = ~ctx.r3.u64 + ctx.xer.ca;",
++          "ctx.xer.ca = temp.u8;" });
++
++    ExpectOrdered(
++        "subfzeo record",
++        Translate(PPC_INST_SUBFZEO, "subfzeo.", { 5, 3 }, (1U << 10) | 1U),
++        { "temp.u8 = ~ctx.r3.u32 + ctx.xer.ca < ctx.xer.ca;",
++          "ctx.xer.ov = ctx.xer.ca && ctx.r3.s32 == INT32_MIN;",
++          "ctx.xer.so |= ctx.xer.ov;",
++          "ctx.r5.u64 = ~ctx.r3.u64 + ctx.xer.ca;",
++          "ctx.xer.ca = temp.u8;",
++          "ctx.cr0.compare<int32_t>(ctx.r5.s32, 0, ctx.xer);" });
++
++    return 0;
++}

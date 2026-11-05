@@ -1,0 +1,29 @@
+diff --git a/XenonUtils/xex.cpp b/XenonUtils/xex.cpp
+--- a/XenonUtils/xex.cpp
++++ b/XenonUtils/xex.cpp
+@@ -4,6 +4,7 @@
+ #include <cstring>
+ #include <vector>
+ #include <unordered_map>
++#include <string_view>
+ #include <aes.hpp>
+ 
+ #define STRINGIFY(X) #X
+@@ -237,8 +238,15 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
+             flags |= SectionFlags_Code;
+         }
+ 
+-        image.Map(reinterpret_cast<const char*>(section.Name), section.VirtualAddress, 
+-            section.Misc.VirtualSize, flags, image.data.get() + section.VirtualAddress);
++        size_t nameLength = 0;
++        while (nameLength < IMAGE_SIZEOF_SHORT_NAME && section.Name[nameLength] != 0)
++        {
++            ++nameLength;
++        }
++        const std::string_view name(
++            reinterpret_cast<const char*>(section.Name), nameLength);
++        image.Map(name, section.VirtualAddress, section.Misc.VirtualSize, flags,
++            image.data.get() + section.VirtualAddress);
+     }
+ 
+     auto* imports = reinterpret_cast<const Xex2ImportHeader*>(getOptHeaderPtr(data, XEX_HEADER_IMPORT_LIBRARIES));

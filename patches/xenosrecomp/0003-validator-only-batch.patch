@@ -1,0 +1,285 @@
+diff --git a/XenosRecomp/CMakeLists.txt b/XenosRecomp/CMakeLists.txt
+index 7a20715..0b3cdcf 100644
+--- a/XenosRecomp/CMakeLists.txt
++++ b/XenosRecomp/CMakeLists.txt
+@@ -23,6 +23,14 @@ add_executable(XenosRecomp
+     shader_validator.h
+     "${SMOLV_SOURCE_DIR}/smolv.cpp")
+ 
++add_executable(XenosShaderPreflight
++    shader_validator.cpp
++    shader_validator_batch.cpp
++    shader_validator_cli.cpp)
++
++target_include_directories(XenosShaderPreflight PRIVATE
++    "${CMAKE_CURRENT_SOURCE_DIR}")
++
+ target_link_libraries(XenosRecomp PRIVATE
+     Microsoft::DirectXShaderCompiler
+     xxHash::xxhash
+diff --git a/XenosRecomp/shader_validator_batch.h b/XenosRecomp/shader_validator_batch.h
+new file mode 100644
+index 0000000..39f1b76
+--- /dev/null
++++ b/XenosRecomp/shader_validator_batch.h
+@@ -0,0 +1,22 @@
++#pragma once
++
++#include <cstddef>
++#include <iosfwd>
++
++struct XenosShaderBatchSummary
++{
++    size_t submitted = 0;
++    size_t valid = 0;
++    size_t invalid = 0;
++};
++
++enum class XenosShaderBatchResult
++{
++    Valid = 0,
++    Invalid = 1,
++    ProtocolError = 2,
++};
++
++XenosShaderBatchResult ValidateXenosShaderBatch(
++    std::istream& input,
++    XenosShaderBatchSummary& summary);
+diff --git a/XenosRecomp/shader_validator_batch.cpp b/XenosRecomp/shader_validator_batch.cpp
+new file mode 100644
+index 0000000..b740bf9
+--- /dev/null
++++ b/XenosRecomp/shader_validator_batch.cpp
+@@ -0,0 +1,85 @@
++#include "shader_validator_batch.h"
++
++#include "shader_validator.h"
++
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <istream>
++#include <limits>
++#include <string>
++#include <vector>
++
++namespace
++{
++constexpr size_t MAX_CONTAINER_SIZE = 16 * 1024 * 1024;
++constexpr size_t MAX_CONTAINER_COUNT = 100'000;
++constexpr size_t MAX_AGGREGATE_SIZE = 1024 * 1024 * 1024;
++
++bool ReadExact(std::istream& input, uint8_t* output, size_t size)
++{
++    while (size != 0)
++    {
++        const size_t chunk = std::min<size_t>(
++            size,
++            size_t(std::numeric_limits<std::streamsize>::max()));
++        input.read(reinterpret_cast<char*>(output), std::streamsize(chunk));
++        if (input.gcount() != std::streamsize(chunk))
++            return false;
++        output += chunk;
++        size -= chunk;
++    }
++    return true;
++}
++
++uint32_t ReadBigEndian32(const std::array<uint8_t, 4>& bytes)
++{
++    return (uint32_t(bytes[0]) << 24) |
++        (uint32_t(bytes[1]) << 16) |
++        (uint32_t(bytes[2]) << 8) |
++        uint32_t(bytes[3]);
++}
++}
++
++XenosShaderBatchResult ValidateXenosShaderBatch(
++    std::istream& input,
++    XenosShaderBatchSummary& summary)
++{
++    summary = {};
++    size_t aggregateSize = 0;
++    while (true)
++    {
++        std::array<uint8_t, 4> header{};
++        if (!ReadExact(input, header.data(), header.size()))
++            return XenosShaderBatchResult::ProtocolError;
++        const size_t size = ReadBigEndian32(header);
++        if (size == 0)
++        {
++            char trailing = 0;
++            if (input.get(trailing))
++                return XenosShaderBatchResult::ProtocolError;
++            if (!input.eof())
++                return XenosShaderBatchResult::ProtocolError;
++            return summary.invalid == 0
++                ? XenosShaderBatchResult::Valid
++                : XenosShaderBatchResult::Invalid;
++        }
++        if (size > MAX_CONTAINER_SIZE || summary.submitted >= MAX_CONTAINER_COUNT ||
++            size > MAX_AGGREGATE_SIZE - aggregateSize)
++        {
++            return XenosShaderBatchResult::ProtocolError;
++        }
++
++        std::vector<uint8_t> container(size);
++        if (!ReadExact(input, container.data(), container.size()))
++            return XenosShaderBatchResult::ProtocolError;
++        aggregateSize += size;
++        ++summary.submitted;
++
++        std::string error;
++        if (ValidateXenosShaderContainer(container.data(), container.size(), error))
++            ++summary.valid;
++        else
++            ++summary.invalid;
++    }
++}
+diff --git a/XenosRecomp/shader_validator_cli.cpp b/XenosRecomp/shader_validator_cli.cpp
+new file mode 100644
+index 0000000..3f2e7ce
+--- /dev/null
++++ b/XenosRecomp/shader_validator_cli.cpp
+@@ -0,0 +1,20 @@
++#include "shader_validator_batch.h"
++
++#include <iostream>
++
++int main(int argc, char**)
++{
++    if (argc != 1)
++        return int(XenosShaderBatchResult::ProtocolError);
++
++    XenosShaderBatchSummary summary;
++    const auto result = ValidateXenosShaderBatch(std::cin, summary);
++    if (result != XenosShaderBatchResult::ProtocolError)
++    {
++        std::cout << "XENOS_PREFLIGHT_V1 "
++                  << summary.submitted << ' '
++                  << summary.valid << ' '
++                  << summary.invalid << '\n';
++    }
++    return int(result);
++}
+diff --git a/XenosTests/CMakeLists.txt b/XenosTests/CMakeLists.txt
+index 004c4f1..3c524a5 100644
+--- a/XenosTests/CMakeLists.txt
++++ b/XenosTests/CMakeLists.txt
+@@ -8,3 +8,11 @@ add_executable(XenosShaderValidatorTests
+ target_include_directories(XenosShaderValidatorTests PRIVATE
+     "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
+ add_test(NAME XenosShaderValidatorTests COMMAND XenosShaderValidatorTests)
++
++add_executable(XenosShaderValidatorBatchTests
++    shader_validator_batch_test.cpp
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp/shader_validator.cpp"
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp/shader_validator_batch.cpp")
++target_include_directories(XenosShaderValidatorBatchTests PRIVATE
++    "${CMAKE_CURRENT_SOURCE_DIR}/../XenosRecomp")
++add_test(NAME XenosShaderValidatorBatchTests COMMAND XenosShaderValidatorBatchTests)
+diff --git a/XenosTests/shader_validator_batch_test.cpp b/XenosTests/shader_validator_batch_test.cpp
+new file mode 100644
+index 0000000..815538e
+--- /dev/null
++++ b/XenosTests/shader_validator_batch_test.cpp
+@@ -0,0 +1,99 @@
++#include "shader_container_scan.h"
++#include "shader_validator_batch.h"
++
++#include <cstdlib>
++#include <iostream>
++#include <sstream>
++#include <string>
++#include <vector>
++
++namespace
++{
++void WriteBigEndian16(uint8_t* output, uint16_t value)
++{
++    output[0] = uint8_t(value >> 8);
++    output[1] = uint8_t(value);
++}
++
++void WriteBigEndian32(uint8_t* output, uint32_t value)
++{
++    output[0] = uint8_t(value >> 24);
++    output[1] = uint8_t(value >> 16);
++    output[2] = uint8_t(value >> 8);
++    output[3] = uint8_t(value);
++}
++
++std::vector<uint8_t> ValidPixelContainer()
++{
++    constexpr uint32_t virtualSize = 160;
++    constexpr uint32_t physicalSize = 12;
++    std::vector<uint8_t> data(virtualSize + physicalSize);
++    WriteBigEndian32(data.data(), XENOS_SHADER_CONTAINER_FLAGS_MAGIC);
++    WriteBigEndian32(data.data() + 4, virtualSize);
++    WriteBigEndian32(data.data() + 8, physicalSize);
++    WriteBigEndian32(data.data() + 16, 36);
++    WriteBigEndian32(data.data() + 20, 128);
++    WriteBigEndian32(data.data() + 24, 96);
++    WriteBigEndian32(data.data() + 36, 56);
++    WriteBigEndian32(data.data() + 40, 28);
++    WriteBigEndian32(data.data() + 52, 1);
++    WriteBigEndian32(data.data() + 56, 28);
++    WriteBigEndian32(data.data() + 68, 48);
++    WriteBigEndian16(data.data() + 72, 2);
++    WriteBigEndian16(data.data() + 76, 1);
++    data[88] = 'c';
++    data[89] = '0';
++    WriteBigEndian32(data.data() + 100, 12);
++    WriteBigEndian32(data.data() + 144, 20);
++    return data;
++}
++
++void AppendFrame(std::string& stream, const std::vector<uint8_t>& payload)
++{
++    const size_t offset = stream.size();
++    stream.resize(offset + 4);
++    WriteBigEndian32(reinterpret_cast<uint8_t*>(stream.data() + offset), uint32_t(payload.size()));
++    stream.append(reinterpret_cast<const char*>(payload.data()), payload.size());
++}
++
++void Require(bool condition, const char* message)
++{
++    if (!condition)
++    {
++        std::cerr << message << '\n';
++        std::exit(1);
++    }
++}
++}
++
++int main()
++{
++    const auto valid = ValidPixelContainer();
++    auto invalid = valid;
++    invalid.resize(invalid.size() - 1);
++
++    std::string framed;
++    AppendFrame(framed, valid);
++    AppendFrame(framed, invalid);
++    framed.append(4, '\0');
++    std::istringstream input(framed);
++    XenosShaderBatchSummary summary;
++    Require(
++        ValidateXenosShaderBatch(input, summary) == XenosShaderBatchResult::Invalid,
++        "mixed batch did not report invalid");
++    Require(summary.submitted == 2 && summary.valid == 1 && summary.invalid == 1,
++        "mixed batch totals are wrong");
++
++    std::istringstream truncated(framed.substr(0, framed.size() - 3));
++    Require(
++        ValidateXenosShaderBatch(truncated, summary) == XenosShaderBatchResult::ProtocolError,
++        "truncated framing was accepted");
++
++    std::string trailing(4, '\0');
++    trailing.push_back('x');
++    std::istringstream trailingInput(trailing);
++    Require(
++        ValidateXenosShaderBatch(trailingInput, summary) == XenosShaderBatchResult::ProtocolError,
++        "bytes after the terminator were accepted");
++    return 0;
++}

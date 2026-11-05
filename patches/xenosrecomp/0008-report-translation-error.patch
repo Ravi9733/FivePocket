@@ -1,0 +1,24 @@
+--- a/XenosRecomp/main.cpp
++++ b/XenosRecomp/main.cpp
+@@ -313,7 +313,8 @@
+         std::string error;
+         if (!recompiler.recompile(fileData.get(), fileSize, include, error))
+         {
+-            fmt::println(stderr, "Shader container failed bounded validation or translation.");
++            // The error is a fixed validation/translation message, never payload bytes.
++            fmt::println(stderr, "Shader container failed bounded validation or translation: {}", error);
+             return 1;
+         }
+         writeAllBytes(output, recompiler.out.data(), recompiler.out.size());
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1609,7 +1609,8 @@
+             }
+ 
+             if (!foundUsage) {
+-                throw std::runtime_error("vertex element has no configured host attribute mapping");
++                throw std::runtime_error(fmt::format("vertex element has no configured host attribute mapping (usage {} index {})",
++                    uint32_t(vertexElement.usage), uint32_t(vertexElement.usageIndex)));
+             }
+ 
+             vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);

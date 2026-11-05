@@ -1,0 +1,83 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index f8f5223..20bdb3d 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -308,6 +308,20 @@ bool Recompiler::Recompile(
+             return fmt::format("ctx.cr{}", index);
+         };
+ 
++    auto crBit = [&](size_t index)
++        {
++            const char* field;
++            switch (index % 4)
++            {
++            case 0: field = "lt"; break;
++            case 1: field = "gt"; break;
++            case 2: field = "eq"; break;
++            default: field = "so"; break;
++            }
++
++            return fmt::format("{}.{}", cr(index / 4), field);
++        };
++
+     auto ctr = [&]()
+         {
+             if (config.ctrAsLocalVariable)
+@@ -419,6 +433,22 @@ bool Recompiler::Recompile(
+             }
+         };
+ 
++    auto printConditionalDirectBranch = [&](const std::string_view& condition, uint32_t address)
++        {
++            if (address < fn.base || address >= fn.base + fn.size)
++            {
++                println("\tif ({}) {{", condition);
++                print("\t");
++                printFunctionCall(address);
++                println("\t\treturn;");
++                println("\t}}");
++            }
++            else
++            {
++                println("\tif ({}) goto loc_{:X};", condition, address);
++            }
++        };
++
+     auto printSetFlushMode = [&](bool enable)
+         {
+             auto newState = enable ? CSRState::VMX : CSRState::FPU;
+@@ -648,7 +678,7 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 == 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printConditionalDirectBranch(fmt::format("{}.u32 == 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDZLR:
+@@ -658,13 +688,22 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDNZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDNZF:
+-        // NOTE: assuming eq here as a shortcut because all the instructions in the game do that
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0 && !{}.eq) goto loc_{:X};", ctr(), cr(insn.operands[0] / 4), insn.operands[1]);
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0 && !{}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
++        break;
++
++    case PPC_INST_BDNZT:
++        println("\t--{}.u64;", ctr());
++        printConditionalDirectBranch(fmt::format("{}.u32 != 0 && {}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
++        break;
++
++    case PPC_INST_BDZF:
++        println("\t--{}.u64;", ctr());
++        printConditionalDirectBranch(fmt::format("{}.u32 == 0 && !{}", ctr(), crBit(insn.operands[0])), insn.operands[1]);
+         break;
+ 
+     case PPC_INST_BEQ:

@@ -1,0 +1,30 @@
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -342,7 +342,8 @@
+     switch (instr.dimension)
+     {
+     case TextureDimension::Texture1D:
+-        dimension = "1D";
++        // 1D textures bind as height-1 2D images: sample at (u, 0.5).
++        dimension = "2D";
+         componentCount = 1;
+         break;
+     case TextureDimension::Texture2D:
+@@ -377,10 +378,17 @@
+ 
+     indent();
+     print("\t{0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr, dimension);
++    if (instr.dimension == TextureDimension::Texture1D)
++        out += "float2(";
+     printSrcRegister(componentCount);
++    if (instr.dimension == TextureDimension::Texture1D)
++        out += ", 0.5)";
+ 
+     switch (instr.dimension)
+     {
++        case TextureDimension::Texture1D:
++            print(", float2({}, 0)", instr.offsetX * 0.5f);
++            break;
+         case TextureDimension::Texture2D:
+             print(", float2({}, {})", instr.offsetX * 0.5f, instr.offsetY * 0.5f);
+             break;

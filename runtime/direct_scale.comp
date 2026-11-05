@@ -1,0 +1,55 @@
+#version 450
+// v411 direct present, filtered scale as a compute pass: direct_present_reference.h's referenceFiltered for the image rect
+// (size = imageWidth x imageHeight), written to an image of that size which the swapchain pass then copies 1:1 (mode 3).
+// Each 16x16 group of output pixels loads its source footprint once into shared memory, mapping every texel through the
+// tables as it loads (v409/v410 fetched 16 texels per output pixel: ~27 M fetches per 1724x970 frame). Taps, weights and
+// the clamp are the fragment shader's, in the same fp32 order. Valid while 15 * 1280 / size.x + 5 <= T (and alike in y).
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, std430) readonly buffer Lut { uint v[1536]; } lut;
+layout(set = 0, binding = 2, rgba8) uniform writeonly image2D dst;
+layout(push_constant) uniform Push { ivec2 size; uint lutBase; uint mode; } p;
+const int T = 24;
+shared vec3 tile[T * T];
+vec3 at(ivec2 c) { return tile[c.y * T + c.x]; }
+vec4 cubicWeights(float t) { // the texels at -1, 0, +1, +2 from floor(u)
+    const float t2 = t * t, t3 = t2 * t;
+    return vec4(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t, 0.5 * t3 - 0.5 * t2);
+}
+void main() {
+    const vec2 s = vec2(1280.0 / float(p.size.x), 720.0 / float(p.size.y));
+    const ivec2 g0 = ivec2(gl_WorkGroupID.xy) * 16;
+    const ivec2 o = ivec2(floor((vec2(g0) + 0.5) * s - 0.5)) - 1; // the tile's first texel (unclamped)
+    for (uint k = gl_LocalInvocationIndex; k < uint(T * T); k += 256u) {
+        const ivec2 c = clamp(o + ivec2(int(k) % T, int(k) / T), ivec2(0), ivec2(1279, 719));
+        const uvec3 b = uvec3(round(texelFetch(source, c, 0).rgb * 255.0));
+        tile[k] = vec3(float(lut.v[p.lutBase + b.r]), float(lut.v[p.lutBase + 256u + b.g]), float(lut.v[p.lutBase + 512u + b.b]));
+    }
+    barrier();
+    const ivec2 q = g0 + ivec2(gl_LocalInvocationID.xy);
+    if (q.x >= p.size.x || q.y >= p.size.y) return;
+    const vec2 u = (vec2(q) + 0.5) * s - 0.5;
+    const vec2 f = floor(u), t = u - f;
+    const ivec2 i = ivec2(f) - o; // floor(u) in tile coordinates (>= 1)
+    vec3 v;
+    if (p.mode == 1u) {
+        const vec3 a = at(i), b = at(i + ivec2(1, 0)), d = at(i + ivec2(0, 1)), e = at(i + ivec2(1, 1));
+        const vec3 top = a + (b - a) * t.x, bottom = d + (e - d) * t.x;
+        v = top + (bottom - top) * t.y;
+    } else {
+        const vec4 wx = cubicWeights(t.x), wy = cubicWeights(t.y);
+        vec3 lo = vec3(255.0), hi = vec3(0.0);
+        v = vec3(0.0);
+        for (int y = 0; y < 4; ++y) {
+            vec3 row = vec3(0.0);
+            for (int x = 0; x < 4; ++x) {
+                const vec3 c = at(i + ivec2(x - 1, y - 1));
+                row += wx[x] * c;
+                if ((x == 1 || x == 2) && (y == 1 || y == 2)) { lo = min(lo, c); hi = max(hi, c); }
+            }
+            v += wy[y] * row;
+        }
+        v = clamp(v, lo, hi);
+    }
+    imageStore(dst, q, vec4(v / 255.0, 1.0));
+}

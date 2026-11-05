@@ -1,0 +1,113 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -2067,7 +2067,15 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_VCMPBFP:
+     case PPC_INST_VCMPBFP128:
+-        println("\t__builtin_debugtrap();");
++        printSetFlushMode(true);
++        println("\tsimde_mm_store_ps({}.f32, simde_mm_or_ps(simde_mm_or_ps(simde_mm_and_ps(simde_mm_cmpgt_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000)))), simde_mm_and_ps(simde_mm_cmplt_ps(simde_mm_load_ps({}.f32), simde_mm_xor_ps(simde_mm_load_ps({}.f32), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0x80000000))))), simde_mm_castsi128_ps(simde_mm_set1_epi32(0x40000000)))), simde_mm_and_ps(simde_mm_cmpunord_ps(simde_mm_load_ps({}.f32), simde_mm_load_ps({}.f32)), simde_mm_castsi128_ps(simde_mm_set1_epi32(int(0xC0000000))))));", v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[1]), v(insn.operands[2]), v(insn.operands[1]), v(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++        {
++            println("\t{}.lt = 0;", cr(6));
++            println("\t{}.gt = 0;", cr(6));
++            println("\t{}.eq = simde_mm_test_all_zeros(simde_mm_load_si128((simde__m128i*){}.u32), simde_mm_load_si128((simde__m128i*){}.u32));", cr(6), v(insn.operands[0]), v(insn.operands[0]));
++            println("\t{}.so = 0;", cr(6));
++        }
+         break;
+ 
+     case PPC_INST_VCMPEQFP:
+@@ -2250,9 +2258,6 @@ bool Recompiler::Recompile(
+         switch (insn.operands[2])
+         {
+         case 0: // D3D color
+-            if (insn.operands[3] != 1 || insn.operands[4] != 3)
+-                fmt::println("Unexpected D3D color pack instruction at {:X}", base);
+-
+             for (size_t i = 0; i < 4; i++)
+             {
+                 constexpr size_t indices[] = { 3, 0, 1, 2 };
+@@ -2260,7 +2265,33 @@ bool Recompiler::Recompile(
+                 println("\t{}.f32[{}] = {}.f32[{}] < 3.0f ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
+                 println("\t{}.u32 {}= uint32_t({}.u8[{}]) << {};", temp(), i == 0 ? "" : "|", vTemp(), i * 4, indices[i] * 8);
+             }
+-            println("\t{}.u32[3] = {}.u32;", v(insn.operands[0]), temp());
++
++            // The mask selects one or two 32-bit lanes, and the shift selects
++            // their destination. Vectors are fully reversed in host storage.
++            switch (insn.operands[3])
++            {
++            case 1:
++                println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
++                break;
++
++            case 2:
++            case 3:
++                if (insn.operands[3] == 3 && insn.operands[4] == 3)
++                {
++                    println("\t{}.u32[0] = 0;", v(insn.operands[0]));
++                }
++                else
++                {
++                    println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
++                    if (insn.operands[4] < 3)
++                        println("\t{}.u32[{}] = 0;", v(insn.operands[0]), insn.operands[4] + 1);
++                }
++                break;
++
++            default:
++                println("\t__builtin_debugtrap();");
++                break;
++            }
+             break;
+ 
+         default:
+diff --git a/XenonTests/exact_vector_recompiler.cc b/XenonTests/exact_vector_recompiler.cc
+--- a/XenonTests/exact_vector_recompiler.cc
++++ b/XenonTests/exact_vector_recompiler.cc
+@@ -193,5 +193,44 @@ int main()
+         std::array<uint16_t, 8>{
+             0xFFFF, 0xFFFF, 2, 3, 0xFFFF, 0xFFFF, 0xFFFF, 16 });
+ 
++    ExpectOrdered(
++        "vpkd3d128 mask1 shift0",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 0 }),
++        { "ctx.v4.u32[0] = temp.u32;" });
++    ExpectOrdered(
++        "vpkd3d128 mask1 shift2",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 1, 2 }),
++        { "ctx.v4.u32[2] = temp.u32;" });
++    ExpectOrdered(
++        "vpkd3d128 mask2 shift1",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 2, 1 }),
++        { "ctx.v4.u32[1] = temp.u32;", "ctx.v4.u32[2] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask2 shift2",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 2, 2 }),
++        { "ctx.v4.u32[2] = temp.u32;", "ctx.v4.u32[3] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask3 shift0",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 3, 0 }),
++        { "ctx.v4.u32[0] = temp.u32;", "ctx.v4.u32[1] = 0;" });
++    ExpectOrdered(
++        "vpkd3d128 mask3 shift3",
++        Translate(PPC_INST_VPKD3D128, "vpkd3d128", { 4, 3, 0, 3, 3 }),
++        { "ctx.v4.u32[0] = 0;" });
++
++    ExpectOrdered(
++        "vcmpbfp128 record",
++        Translate(PPC_INST_VCMPBFP128, "vcmpbfp128.", { 5, 3, 4 }),
++        { "simde_mm_cmpgt_ps(",
++          "ctx.v3.f32",
++          "ctx.v4.f32",
++          "simde_mm_cmplt_ps(",
++          "simde_mm_cmpunord_ps(",
++          "ctx.cr6.lt = 0;",
++          "ctx.cr6.gt = 0;",
++          "ctx.cr6.eq = simde_mm_test_all_zeros(",
++          "ctx.v5.u32",
++          "ctx.cr6.so = 0;" });
++
+     return 0;
+ }

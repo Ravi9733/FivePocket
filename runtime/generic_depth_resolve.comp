@@ -1,0 +1,11 @@
+#version 450
+// Attempt v19 generic renderer: copy a D24S8 depth region into an R32F texture (a Xenos depth resolve).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D depthTexture;
+layout(set = 0, binding = 1, r32f) uniform writeonly image2D destination;
+layout(push_constant) uniform Region { ivec2 source; ivec2 target; ivec2 size; } region;
+void main() {
+    const ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= region.size.x || p.y >= region.size.y) return;
+    imageStore(destination, p + region.target, vec4(texelFetch(depthTexture, p + region.source, 0).r));
+}

@@ -1,0 +1,50 @@
+--- a/XenosRecomp/shader_common.h
++++ b/XenosRecomp/shader_common.h
+@@ -325,24 +325,32 @@
+     texture.GetDimensions(0, dimensions.x, dimensions.y, dimensions.z, dimensions.w);
+     return dimensions.xyz;
+ }
++
++// Vertex texture fetch has no implicit derivatives: sample LOD 0 (the fetch's
++// own LOD fields are not translated; GTA V's vertex textures have no mips).
++#ifdef XENOS_VERTEX_SHADER
++#define XENOS_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).SampleLevel(SAMPLER, COORD, 0)
++#else
++#define XENOS_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).Sample(SAMPLER, COORD)
++#endif
+ 
+ float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
+ {
+     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
+-    return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture));
++    return XENOS_SAMPLE(texture, g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture));
+ }
+ 
+ float4 tfetch2DArray(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, float3 offset)
+ {
+     Texture2DArray<float4> texture = g_Texture2DArrayDescriptorHeap[resourceDescriptorIndex];
+     uint3 dimensions = getTexture2DArrayDimensions(texture);
+-    return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], float3(texCoord.xy + offset.xy / dimensions.xy, texCoord.z * dimensions.z));
++    return XENOS_SAMPLE(texture, g_SamplerDescriptorHeap[samplerDescriptorIndex], float3(texCoord.xy + offset.xy / dimensions.xy, texCoord.z * dimensions.z));
+ }
+ 
+ float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord)
+ {
+     float3 dir = cubeDir(texCoord);
+-    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(
++    return XENOS_SAMPLE(g_TextureCubeDescriptorHeap[resourceDescriptorIndex],
+         g_SamplerDescriptorHeap[samplerDescriptorIndex], dir);
+ }
+ 
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1330,6 +1330,9 @@
+ {
+     const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
+ 
++    // Vertex stages have no derivatives: the common header samples at an explicit LOD.
++    if ((shaderContainer->flags & 0x1) != 0)
++        out += "#define XENOS_VERTEX_SHADER 1\n";
+     out += include;
+     out += '\n';
+ 
