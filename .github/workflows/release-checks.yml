@@ -31,22 +31,13 @@ jobs:
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
-      - name: Compile installable Android debug APK
-        working-directory: android
-        run: bash ./gradlew --no-daemon assembleDebug
-      - uses: actions/upload-artifact@v4
-        with:
-          name: FivePocket-turnip-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-      - name: Compile asset-free public smoke APK
+      - name: Compile signed public Android APK
         working-directory: android
         run: bash ./gradlew --no-daemon assemblePublic -PpublicTestSigned
-      # The debug APK is the installable launcher build: it includes Setup Game, the bundle importer,
-      # the Vulkan/Turnip driver manager and the app's matching debug signing key. It contains no game
-      # code or game data; those are built from the owner's own discs by the desktop builder.
-      # The publicTestSigned APK is only an asset-free smoke build and is never published.
-      # The taint scan needs the game's files, which CI never has. It is run before every release on a
-      # machine with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
+      # This is an asset-free smoke build (publicTestSigned), not a player APK:
+      # it deliberately has no public/config.json and cannot import or activate a game bundle.
+      # Do not publish it as an installable artifact. A real player APK is built only with the
+      # user's matching public metadata and is checked against their code bundle.
+      # The taint scan needs the game's files, which CI never has. It is run before every release on a machine
+      # with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
 # Keep the push trigger: a fresh commit after Actions is enabled starts the validation/build workflow.
