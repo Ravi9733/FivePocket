@@ -24,7 +24,7 @@ final class TurnipDriverStore {
     List<Driver> list(){
         List<Driver> out=new ArrayList<>();File[] dirs=root.listFiles();if(dirs==null)return out;
         for(File d:dirs){if(!d.isDirectory()||d.getName().startsWith(".")||"selected".equals(d.getName()))continue;
-            try{Map<?,?> m=meta(new File(d,"meta.json"));String lib=str(m,"libraryName");File so=new File(d,lib);
+            try{Map<?,?> m=meta(new File(d,"meta.json"));String lib=libraryName(m,d);File so=new File(d,lib);
                 if(safe(lib)&&so.isFile()&&so.length()>0)out.add(new Driver(d.getName(),str(m,"name"),str(m,"vendor"),str(m,"driverVersion"),lib));
             }catch(Exception ignored){}
         }return out;
@@ -132,9 +132,10 @@ final class TurnipDriverStore {
         try(InputStream in=new FileInputStream(f)){
             byte[] h=new byte[20];int at=0,n;
             while(at<h.length&&(n=in.read(h,at,h.length-at))>0)at+=n;
+            int type=at==h.length?((h[16]&255)|((h[17]&255)<<8)):0;
             if(at!=h.length||h[0]!=0x7f||h[1]!='E'||h[2]!='L'||h[3]!='F'||h[4]!=2||h[5]!=1
-                    ||(h[18]&255)!=183||(h[19]&255)!=0)
-                throw new Exception("Vulkan library is not a 64-bit ARM ELF");
+                    ||h[6]!=1||type!=3||(h[18]&255)!=183||(h[19]&255)!=0)
+                throw new Exception("Vulkan library is not a 64-bit ARM ELF shared object");
         }
     }
     private static void deleteTree(File f){File[] c=f.listFiles();if(c!=null)for(File x:c)deleteTree(x);f.delete();}
