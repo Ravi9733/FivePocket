@@ -36,6 +36,7 @@ def main():
     require(store, r'new File\(stage,"meta\.json"\)', "preserve ADPKG metadata")
     require(store, r'zipLeaf\(path\).*Unsafe ZIP entry path', "reject unsafe ZIP paths")
     require(store, r'MAX_ENTRIES', "bound ZIP entry count")
+    require(store, r'\+\+count>MAX_ENTRIES', "enforce the declared ZIP entry-count limit")
     require(store, r'MAX_TOTAL', "bound extracted package size")
     require(store, r'verifyElf\(dest\)', "validate every shared library")
     require(store, r'0x7f.*183', "require 64-bit ARM ELF")
