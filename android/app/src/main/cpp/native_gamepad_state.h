@@ -22,3 +22,42 @@ inline std::array<std::uint8_t,16> encodeGamepadState(const GamepadState& s) {
     return out;
 }
 }
+
+
+// Thread-safe snapshot shared by the private Android trace JNI bridge.
+#include <mutex>
+namespace recomp::input {
+class GamepadSnapshot {
+public:
+    void publish(bool connected, const GamepadState& state) noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_ = state;
+        connected_ = connected;
+        if (connected) ++state_.packet;
+    }
+    void capabilities(const GamepadState& state) noexcept {
+        std::lock_guard<std::mutex> lock(mutex_);
+        capabilities_ = state;
+        haveCapabilities_ = true;
+    }
+    int read(std::uint32_t user, GamepadState& out) noexcept {
+        if (user != 0) return 0;
+        std::lock_guard<std::mutex> lock(mutex_);
+        out = state_;
+        return connected_ ? 1 : 0;
+    }
+    int readCapabilities(std::uint32_t user, GamepadState& out) noexcept {
+        if (user != 0) return -1;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!haveCapabilities_) return -1;
+        out = capabilities_;
+        return 0;
+    }
+private:
+    std::mutex mutex_;
+    GamepadState state_{};
+    GamepadState capabilities_{};
+    bool connected_ = false;
+    bool haveCapabilities_ = false;
+};
+}
