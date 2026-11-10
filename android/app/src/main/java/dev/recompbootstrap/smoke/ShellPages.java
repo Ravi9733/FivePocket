@@ -89,8 +89,18 @@ final class ShellPages {
     /** The Play tab: the one item at the left; its state, and the state of game data, game code and controller, at the right. */
     static void play(MenuScenes.Page page, ShellNav nav, LauncherMenu menu, String controllerName, TimeZone zone) {
         boolean onItem = nav.level() != ShellNav.STRIP;
-        page.column = new String[] {Scene.titleCase(menu.label(LauncherMenu.PRIMARY))};
-        page.columnEnabled = new boolean[] {menu.enabled(LauncherMenu.PRIMARY)};
+        // Public builds always keep a separate Setup Game entry. The primary row remains Play (or the
+        // existing repair/setup action) so importing files never removes the way back to setup.
+        if (menu.publicApp()) {
+            nav.setColumnCount(ShellNav.PLAY, 2);
+            page.column = new String[] {Scene.titleCase(menu.label(LauncherMenu.PRIMARY)), "Setup Game"};
+            page.columnEnabled = new boolean[] {menu.enabled(LauncherMenu.PRIMARY), true};
+        } else {
+            nav.setColumnCount(ShellNav.PLAY, 1);
+            page.column = new String[] {Scene.titleCase(menu.label(LauncherMenu.PRIMARY))};
+            page.columnEnabled = new boolean[] {menu.enabled(LauncherMenu.PRIMARY)};
+        }
+        page.columnSelected = nav.column(ShellNav.PLAY);
         page.columnLit = onItem;
         page.info.add(new MenuScenes.Line(menu.stateLine(),
                 menu.stateLineIsWarning() ? MenuScenes.TONE_WARNING : MenuScenes.TONE_NORMAL));
@@ -120,7 +130,10 @@ final class ShellPages {
             page.prompts.add(select("Start Anyway"));
         } else {
             page.prompts.add(back(SettingsPages.PROMPT_BACK));
-            if (menu.enabled(LauncherMenu.PRIMARY) && !menu.preparing()) page.prompts.add(select(SettingsPages.PROMPT_SELECT));
+            boolean setupSelected = menu.publicApp() && nav.column(ShellNav.PLAY) == 1;
+            if ((setupSelected || menu.enabled(LauncherMenu.PRIMARY)) && !menu.preparing()) {
+                page.prompts.add(select(SettingsPages.PROMPT_SELECT));
+            }
         }
     }
 
