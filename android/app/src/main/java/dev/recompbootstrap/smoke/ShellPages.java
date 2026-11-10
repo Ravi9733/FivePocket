@@ -15,8 +15,8 @@ final class ShellPages {
     /** The title at the top left: the name of the game this private build runs, as plain text. */
     static final String TITLE = "FivePocket"; // owner 2026-10-25 (the project's name; was the game's title)
     static final String TEXT_PRIVATE_BUILD = "Private build", TEXT_NO_CONTROLLER = "No controller";
-    static final String[] ABOUT_SECTIONS = {"This App", "Game Build", "Licence Notices", "Graphics Self-Test", CaptureAbout.SECTION};
-    static final int ABOUT_APP = 0, ABOUT_BUILD = 1, ABOUT_NOTICES = 2, ABOUT_SELF_TEST = 3, ABOUT_CAPTURES = 4;
+    static final String[] ABOUT_SECTIONS = {"This App", "Game Build", "Licence Notices", "Graphics Self-Test", "GPU Drivers", CaptureAbout.SECTION};
+    static final int ABOUT_APP = 0, ABOUT_BUILD = 1, ABOUT_NOTICES = 2, ABOUT_SELF_TEST = 3, ABOUT_GPU_DRIVERS = 4, ABOUT_CAPTURES = 5;
     /** What A does on the Captures section while pictures wait to be copied. */
     static final String PROMPT_COPY = "Copy To Pictures";
     static final String TEXT_SELF_TEST = "Opens a graphics test screen. Android's Back returns from it.";

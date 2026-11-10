@@ -396,6 +396,12 @@ final class AboutScreen {
         ShellPages.about(page, nav, shown, scroll, capturesToCopy());
     }
 
+    /** Opens the app-private custom Vulkan driver manager. */
+    void startGpuDrivers() {
+        Activity activity = host.activity();
+        activity.startActivity(new Intent(activity, GpuDriverActivity.class));
+    }
+
     /** Opens a second instance of the launcher activity in its old self-test mode; Back returns here. */
     void startSelfTest() {
         Activity activity = host.activity();
