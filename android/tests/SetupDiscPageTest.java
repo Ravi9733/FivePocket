@@ -120,11 +120,10 @@ public final class SetupDiscPageTest {
             expectEquals(MenuScenes.ALERT_HEADING, drawnHeading(other), "a question without a heading of its own");
         });
 
-        check("touch: a tap on another row moves the highlight; on the highlighted row it is A; answers likewise", () -> {
+        check("touch: one tap selects and activates a setup row; answers still require focus then confirm", () -> {
             SetupDiscKit.Device d = new SetupDiscKit.Device("page-touch", true).open();
-            expect(!SetupDiscPage.tap(d.model, 1), "first tap moves");
-            expectEquals(1, d.model.focused(), "moved");
-            expect(SetupDiscPage.tap(d.model, 1), "second tap is A");
+            expect(SetupDiscPage.tap(d.model, 1), "one tap activates");
+            expectEquals(1, d.model.focused(), "the tapped row is focused");
             d.nextChoice = d.document("Disc2-Play.iso", SetupDiscKit.playImage());
             d.model.focus(0);
             d.press(NavInput.CONFIRM);
