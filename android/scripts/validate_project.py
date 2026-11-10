@@ -31,6 +31,8 @@ def main() -> int:
         "app/src/main/java/dev/recompbootstrap/smoke/NativeBridge.java",
         "app/src/main/cpp/CMakeLists.txt",
         "app/src/main/cpp/guest_address_space.cpp",
+        "app/src/main/cpp/guest_native_initialization.cpp",
+        "app/src/main/cpp/xenos_command_stream.cpp",
         "app/src/main/cpp/guest_address_space.h",
         "app/src/main/cpp/guest_execution_guard.cpp",
         "app/src/main/cpp/guest_execution_guard.h",
