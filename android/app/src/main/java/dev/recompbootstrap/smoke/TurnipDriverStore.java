@@ -62,8 +62,9 @@ final class TurnipDriverStore {
                     if("meta.json".equals(n)){
                         byte[] b=readEntry(z,64*1024);Object parsed=JsonLite.parse(new String(b,StandardCharsets.UTF_8));
                         if(!(parsed instanceof Map))throw new Exception("meta.json must be an object");m=(Map<?,?>)parsed;
+                        try(FileOutputStream metadata=new FileOutputStream(new File(stage,"meta.json"))){metadata.write(b);metadata.getFD().sync();}
                     }else if(n.endsWith(".so")){
-                        File dest=new File(stage,n);long size=copyEntry(z,dest,MAX_LIBRARY);total+=size;
+                        File dest=new File(stage,n);long size=copyEntry(z,dest,MAX_LIBRARY);verifyElf(dest);total+=size;
                         if(total>MAX_TOTAL)throw new Exception("Driver package is too large");
                     }else throw new Exception("Unexpected file in driver ZIP: "+n);
                     z.closeEntry();
