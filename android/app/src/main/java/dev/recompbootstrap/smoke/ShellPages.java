@@ -170,7 +170,7 @@ final class ShellPages {
         // are pictures to copy, and on a text long enough to scroll.
         if (level == ShellNav.COLUMN && section == ABOUT_CAPTURES) {
             if (capturesToCopy) page.prompts.add(select(PROMPT_COPY));
-        } else if (level == ShellNav.STRIP || (level == ShellNav.COLUMN && (section == ABOUT_SELF_TEST || aboutScrollable(lines.size())))) {
+        } else if (level == ShellNav.STRIP || (level == ShellNav.COLUMN && (section == ABOUT_SELF_TEST || section == ABOUT_GPU_DRIVERS || aboutScrollable(lines.size())))) {
             page.prompts.add(select(SettingsPages.PROMPT_SELECT));
         }
     }
