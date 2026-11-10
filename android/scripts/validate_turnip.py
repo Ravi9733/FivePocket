@@ -41,6 +41,8 @@ def main():
     require(store, r'0x7f.*183', "require 64-bit ARM ELF")
     require(store, r'type!=3', "require an ELF shared object")
     require(store, r'libraryName\(m,d\)', "list ADPKGs without optional libraryName")
+    require(store, r'Qualcomm.*Mesa', "restrict ADPKG vendor to schema values")
+    require(store, r'version\.matches\(', "validate ADPKG driver version format")
     require(store, r'AtomicFile', "atomic active-driver selection")
     require(store, r'Build\.VERSION\.SDK_INT<28', "require Android 9 or newer")
     require(store, r'getFilesDir\(\).*FOLDER', "install in app-private storage")
