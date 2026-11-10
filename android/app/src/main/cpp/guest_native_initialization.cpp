@@ -39,6 +39,11 @@ template<class Copy> bool v232Matches(const Copy& copy,std::uint32_t physicalBas
 #include <cstring>
 #include "guest_registry_concurrency.h" // v42, last include: every R holder is a registry section.
 
+namespace recomp::bootstrap {
+// Defined by guest_import_registry.cpp; available in cooperative and threaded builds.
+void noteNativeSubmissionMayCommitAt(unsigned site) noexcept;
+}
+
 // The guest thread that called the current registry member. Parallel builds (RECOMP_GUEST_THREADS
 // > 0, with the attempt's parallel guest_import_registry.cpp) resolve it exactly as the registry's
 // own RECOMP_CURRENT_GUEST_TOKEN: the calling host thread's binding while it executes guest code.
