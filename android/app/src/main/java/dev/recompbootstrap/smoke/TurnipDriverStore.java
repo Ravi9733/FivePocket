@@ -169,8 +169,21 @@ final class TurnipDriverStore {
         try(FileOutputStream out=new FileOutputStream(file)){out.write(json.getBytes(StandardCharsets.UTF_8));out.getFD().sync();}
     }
     private static String jsonEscape(String value){
-        return value.replace("\\\\","\\\\\\\\").replace("\\"","\\\\\\\"")
-                .replace("\\n","\\\\n").replace("\\r","\\\\r").replace("\\t","\\\\t");
+        StringBuilder out=new StringBuilder(value.length()+16);
+        for(int i=0;i<value.length();i++){
+            char c=value.charAt(i);
+            switch(c){
+                case '\\': out.append("\\\\"); break;
+                case '"': out.append("\\\""); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if(c<0x20)out.append(String.format(Locale.ROOT,"\\u%04x",(int)c));
+                    else out.append(c);
+            }
+        }
+        return out.toString();
     }
     private static Map<?,?> meta(File f)throws Exception{
         if(!f.isFile()||f.length()>65536)throw new Exception("Metadata missing");
