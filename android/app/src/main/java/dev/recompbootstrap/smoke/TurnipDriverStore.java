@@ -80,8 +80,9 @@ final class TurnipDriverStore {
             if(m==null||num(m,"schemaVersion")!=1)throw new Exception("Missing or unsupported ADPKG metadata");
             String name=str(m,"name"),author=str(m,"author"),vendor=str(m,"vendor"),version=str(m,"driverVersion");
             str(m,"packageVersion");long minApi=num(m,"minApi");String lib=libraryName(m,stage);
-            if(name.isEmpty()||author.isEmpty()||vendor.isEmpty()||version.isEmpty()||!safe(lib)||!lib.endsWith(".so"))
-                throw new Exception("ADPKG metadata is incomplete");
+            if(name.isEmpty()||author.isEmpty()||!("Qualcomm".equals(vendor)||"Mesa".equals(vendor))
+                    ||!version.matches("[0-9]+\\.[0-9]+\\.[0-9]+(-.+)?")||!safe(lib)||!lib.endsWith(".so"))
+                throw new Exception("ADPKG metadata is incomplete or does not match the ADPKG schema");
             if(minApi>Build.VERSION.SDK_INT)throw new Exception("Driver requires Android API "+minApi);
             File main=new File(stage,lib);if(!main.isFile()||main.length()==0||main.length()>MAX_LIBRARY)throw new Exception("Main Vulkan library is missing");
             verifyElf(main);
