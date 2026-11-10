@@ -299,11 +299,7 @@ final class LauncherScreen implements Screen, UiKit.Listener {
     /** A on the column item of a tab that has no pane to enter. */
     private void activate(int tab) {
         if (tab == ShellNav.PLAY) {
-            if (nav.column(ShellNav.PLAY) == 1) {
-                host.push(new SetupScreen());
-            } else {
-                perform(menu.tap(LauncherMenu.PRIMARY, host.gameRunning()));
-            }
+            perform(menu.tap(LauncherMenu.PRIMARY, host.gameRunning()));
         } else if (tab == ShellNav.CONTROLLER) {
             perform(menu.tap(LauncherMenu.CONTROLLER_CHECK, host.gameRunning()));
         } else if (tab == ShellNav.ABOUT && nav.column(ShellNav.ABOUT) == ShellPages.ABOUT_SELF_TEST) {
