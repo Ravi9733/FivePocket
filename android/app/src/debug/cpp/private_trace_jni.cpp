@@ -9,7 +9,7 @@
 #include <atomic>
 #include <algorithm>
 #include <android/log.h>
-#include "native_gamepad_snapshot.h"
+#include "native_gamepad_state.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
