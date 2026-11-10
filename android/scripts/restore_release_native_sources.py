@@ -17,6 +17,12 @@ NAMES = (
     "vulkan_smoke.h",
     "shader_constant_upload.cpp",
     "shader_constant_upload.h",
+    "guest_address_space.cpp",
+    "guest_cooperative_executor.cpp",
+    "guest_execution_guard.cpp",
+    "guest_import_registry.cpp",
+    "guest_native_initialization.cpp",
+    "xenos_command_stream.cpp",
 )
 
 def main() -> None:
