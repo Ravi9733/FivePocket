@@ -30,7 +30,7 @@ def main():
     modules = (ROOT.parent / ".gitmodules").read_text(encoding="utf-8")
 
     require(store, r'ZipInputStream', "streaming ZIP extraction")
-    require(store, r'new File\(root,"meta\.json"\)', "preserve ADPKG metadata")
+    require(store, r'new File\(stage,"meta\.json"\)', "preserve ADPKG metadata")
     require(store, r'!safe\(n\)', "reject unsafe ZIP paths")
     require(store, r'MAX_ENTRIES', "bound ZIP entry count")
     require(store, r'MAX_TOTAL', "bound extracted package size")
