@@ -128,6 +128,7 @@ public final class PrivateTraceActivity extends Activity {
     }
 
     private static native boolean prepareProcess(boolean traceRun);
+    private static native boolean prepareVulkanDriver(String filesDirectory, String nativeLibraryDirectory, String cacheDirectory);
     private static native int claimRequest(String filesDirectory, String requestId);
     private static native int openLibrary(String filesDirectory,int frameMode);
     private static native int checkAbi(int descriptor, String filesDirectory);
@@ -181,6 +182,12 @@ public final class PrivateTraceActivity extends Activity {
         }
         // closesUsedRequest(1,...) is true exactly when the id is a line of settings/launcher-runs.txt.
         launcherStart=InputDispatchOption.closesUsedRequest(1,getFilesDir(),requestId);
+        // Install the optional custom Vulkan loader before loading the JNI library
+        // that links libvulkan.so. This must run in the dedicated private_trace process.
+        System.loadLibrary("recomp_turnip_bootstrap");
+        boolean customVulkan = prepareVulkanDriver(getFilesDir().getAbsolutePath(),
+                getApplicationInfo().nativeLibraryDir, getCacheDir().getAbsolutePath());
+        Log.i(TAG, customVulkan ? "Custom Vulkan driver selected" : "Using system Vulkan driver");
         System.loadLibrary("recomp_private_debug");
         if(gameRequested)gamepadInput=new PrivateGamepadInput(this);
         if(gameRequested)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
