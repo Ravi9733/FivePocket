@@ -101,6 +101,9 @@ final class TurnipDriverStore {
             if(!safe(lib)||!lib.endsWith(".so"))throw new Exception("Main Vulkan library name is invalid");
             File main=new File(stage,lib);if(!main.isFile()||main.length()==0||main.length()>MAX_LIBRARY)throw new Exception("Main Vulkan library is missing");
             verifyElf(main);
+            // Always persist normalized metadata. Plain Mesa/Turnip ZIPs often omit meta.json;
+            // without this record list() hides the successfully imported driver after restart.
+            writeMetadata(new File(stage,"meta.json"),name,vendor,version,lib,minApi);
             String slug=slug(name+"-"+version)+"-"+Long.toHexString(System.nanoTime());
             File dest=new File(root,slug);if(!stage.renameTo(dest))throw new Exception("Could not finish driver installation");
             return new Driver(slug,name,vendor,version,lib);
@@ -147,8 +150,27 @@ final class TurnipDriverStore {
             if(file.isFile()&&n.endsWith(".so")&&(n.startsWith("libvulkan")||n.startsWith("vulkan.")))
                 candidates.add(n);
         }
+        // Common Turnip distributions use libvulkan_freedreno.so; prefer it when a ZIP
+        // contains several Vulkan variants, then use the other known Mesa/Adreno sonames.
+        String[] preferred={"libvulkan_freedreno.so","libvulkan_turnip.so","vulkan.adreno.so"};
+        for(String candidate:preferred)if(candidates.contains(candidate))return candidate;
         if(candidates.size()!=1)throw new Exception("ADPKG must identify one main Vulkan library");
         return candidates.get(0);
+    }
+    private static void writeMetadata(File file,String name,String vendor,String version,String library,long minApi)throws Exception{
+        String json="{\n"
+                +"  \"schemaVersion\": 1,\n"
+                +"  \"name\": \""+jsonEscape(name)+"\",\n"
+                +"  \"vendor\": \""+jsonEscape(vendor)+"\",\n"
+                +"  \"driverVersion\": \""+jsonEscape(version)+"\",\n"
+                +"  \"minApi\": "+minApi+",\n"
+                +"  \"libraryName\": \""+jsonEscape(library)+"\"\n"
+                +"}\n";
+        try(FileOutputStream out=new FileOutputStream(file)){out.write(json.getBytes(StandardCharsets.UTF_8));out.getFD().sync();}
+    }
+    private static String jsonEscape(String value){
+        return value.replace("\\\\","\\\\\\\\").replace("\\"","\\\\\\\"")
+                .replace("\\n","\\\\n").replace("\\r","\\\\r").replace("\\t","\\\\t");
     }
     private static Map<?,?> meta(File f)throws Exception{
         if(!f.isFile()||f.length()>65536)throw new Exception("Metadata missing");
