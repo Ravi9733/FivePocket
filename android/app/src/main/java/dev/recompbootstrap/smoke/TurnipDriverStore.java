@@ -3,6 +3,7 @@ package dev.recompbootstrap.smoke;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
+import android.util.AtomicFile;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -42,10 +43,16 @@ final class TurnipDriverStore {
         if(!safe(d.folder)||!safe(d.library)||!dir.isDirectory()||!so.isFile()||so.length()==0||so.length()>MAX_LIBRARY)
             throw new Exception("Driver files are incomplete");
         if(!root.exists()&&!root.mkdirs())throw new Exception("Cannot create private driver folder");
-        File tmp=new File(root,"selected.tmp");try(FileOutputStream o=new FileOutputStream(tmp)){
-            o.write((d.folder+"\n"+d.library+"\n").getBytes(StandardCharsets.UTF_8));o.getFD().sync();}
-        File dst=new File(root,"selected");if(dst.exists()&&!dst.delete()){tmp.delete();throw new Exception("Cannot replace selection");}
-        if(!tmp.renameTo(dst)){tmp.delete();throw new Exception("Cannot save selection");}
+        AtomicFile atomic=new AtomicFile(new File(root,"selected"));
+        FileOutputStream out=null;
+        try {
+            out=atomic.startWrite();
+            out.write((d.folder+"\n"+d.library+"\n").getBytes(StandardCharsets.UTF_8));
+            atomic.finishWrite(out);
+        } catch(Exception failure) {
+            if(out!=null)atomic.failWrite(out);
+            throw new Exception("Cannot save driver selection",failure);
+        }
     }
     Driver install(Context c,Uri uri)throws Exception{
         if(Build.VERSION.SDK_INT<28||!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a"))
@@ -88,7 +95,14 @@ final class TurnipDriverStore {
         Object o=JsonLite.parse(new String(readFile(f,65536),StandardCharsets.UTF_8));if(!(o instanceof Map))throw new Exception("Bad metadata");return (Map<?,?>)o;
     }
     private static String str(Map<?,?> m,String k)throws Exception{Object v=m.get(k);if(!(v instanceof String))throw new Exception("ADPKG field missing: "+k);return ((String)v).trim();}
-    private static long num(Map<?,?> m,String k)throws Exception{Object v=m.get(k);if(!(v instanceof Number))throw new Exception("ADPKG field missing: "+k);return ((Number)v).longValue();}
+    private static long num(Map<?,?> m,String k)throws Exception{
+        Object v=m.get(k);
+        if(!(v instanceof Number))throw new Exception("ADPKG field missing: "+k);
+        double d=((Number)v).doubleValue();
+        if(!Double.isFinite(d)||d!=Math.rint(d)||d<Long.MIN_VALUE||d>Long.MAX_VALUE)
+            throw new Exception("ADPKG field must be an integer: "+k);
+        return (long)d;
+    }
     private static boolean safe(String s){
         if(s==null||s.isEmpty()||s.length()>128||".".equals(s)||"..".equals(s))return false;
         for(int i=0;i<s.length();i++){char c=s.charAt(i);if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='.'||c=='_'||c=='+'||c=='-'))return false;}return true;
@@ -97,6 +111,14 @@ final class TurnipDriverStore {
     private static byte[] readEntry(InputStream in,int max)throws Exception{ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] x=new byte[8192];int n;while((n=in.read(x))!=-1){if(b.size()+n>max)throw new Exception("Metadata too large");b.write(x,0,n);}return b.toByteArray();}
     private static byte[] readFile(File f,int max)throws Exception{try(InputStream in=new FileInputStream(f)){return readEntry(in,max);}}
     private static long copyEntry(InputStream in,File f,long max)throws Exception{long total=0;byte[] b=new byte[65536];try(FileOutputStream o=new FileOutputStream(f)){int n;while((n=in.read(b))!=-1){total+=n;if(total>max)throw new Exception("Driver library exceeds size limit");o.write(b,0,n);}o.getFD().sync();}if(total==0)throw new Exception("Empty driver library");return total;}
-    private static void verifyElf(File f)throws Exception{try(InputStream in=new FileInputStream(f)){byte[] h=new byte[20];if(in.read(h)!=20||h[0]!=0x7f||h[1]!='E'||h[2]!='L'||h[3]!='F'||h[4]!=2||h[5]!=1||(h[18]&255)!=183||(h[19]&255)!=0)throw new Exception("Vulkan library is not a 64-bit ARM ELF");}}
+    private static void verifyElf(File f)throws Exception{
+        try(InputStream in=new FileInputStream(f)){
+            byte[] h=new byte[20];int at=0,n;
+            while(at<h.length&&(n=in.read(h,at,h.length-at))>0)at+=n;
+            if(at!=h.length||h[0]!=0x7f||h[1]!='E'||h[2]!='L'||h[3]!='F'||h[4]!=2||h[5]!=1
+                    ||(h[18]&255)!=183||(h[19]&255)!=0)
+                throw new Exception("Vulkan library is not a 64-bit ARM ELF");
+        }
+    }
     private static void deleteTree(File f){File[] c=f.listFiles();if(c!=null)for(File x:c)deleteTree(x);f.delete();}
 }
