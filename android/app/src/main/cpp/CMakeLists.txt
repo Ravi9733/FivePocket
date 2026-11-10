@@ -27,6 +27,7 @@ add_library(recomp_bootstrap SHARED
 # The self-test library shares headers with the game runtime, and those use C++20 (std::span, <bit>) since
 # September: with C++17 this target no longer compiles (ship week finding, 2026-10-05). Only this target moves to
 # C++20; the loader target below keeps the exact flags the installed loader was built with.
+target_include_directories(recomp_bootstrap PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../runtime")
 target_compile_features(recomp_bootstrap PRIVATE cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(recomp_bootstrap PRIVATE Threads::Threads)
@@ -77,6 +78,7 @@ add_library(recomp_private_debug SHARED ../../debug/cpp/private_trace_jni.cpp
     guest_address_space.cpp smoke_runtime.cpp vulkan_smoke.cpp)
 target_compile_features(recomp_private_debug PRIVATE cxx_std_17)
 target_include_directories(recomp_private_debug PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../runtime"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../tools/host_guest_trace")
 target_compile_definitions(recomp_private_debug PRIVATE VK_USE_PLATFORM_ANDROID_KHR=1)
 target_compile_options(recomp_private_debug PRIVATE -Wall -Wextra -Werror)
