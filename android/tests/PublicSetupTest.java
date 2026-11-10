@@ -50,7 +50,8 @@ public final class PublicSetupTest {
             expect(screen.contains("code.activate(") && screen.contains("new SetupScreen(true)"),"import/activation/discs wire");
             expect(launch.contains("ShipApplication.playerApp(), ShipApplication.publicApp()"),"public menu");
             String pages=Files.readString(src.resolve("ShellPages.java"));
-            expect(pages.contains("menu.publicApp()") && pages.contains("\"Setup Game\""),"persistent Setup Game menu entry");
+            expect(pages.contains("\"Setup Game\"") && pages.contains("nav.setColumnCount(ShellNav.PLAY, 2)")
+                    && !pages.contains("if (menu.publicApp())"),"Setup Game entry is present in asset-free and public APKs");
             expect(launch.contains("nav.column(ShellNav.PLAY) == 1") && launch.contains("new SetupScreen()"),"Setup Game menu route");
             expect(screen.contains("model.tap(row, host.gameRunning())"),"one-tap file row activation");
             expect(start.contains("if (PublicGameCode.isPublic(apkPath)) { done(null); return; }"),"update does not replace import");
