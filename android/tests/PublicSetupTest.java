@@ -8,8 +8,9 @@ import java.util.*;
 public final class PublicSetupTest {
     public static void main(String[] args) throws Exception {
         check("U01 setup action opens the code picker, discs, and menu in order", () -> {
-            PublicSetupModel m=new PublicSetupModel();expectEquals(PublicSetupModel.PICK,m.confirm(false),"picker");
-            m.move(1,false);expectEquals(PublicSetupModel.DISCS,m.confirm(false),"discs");m.move(1,false);
+            PublicSetupModel m=new PublicSetupModel();expectEquals(PublicSetupModel.PICK,m.tap(0,false),"one tap opens picker");
+            expectEquals(0,m.focus,"picker row focused");
+            expectEquals(PublicSetupModel.DISCS,m.tap(1,false),"one tap opens disc setup");m.move(1,false);
             expectEquals(PublicSetupModel.LEAVE,m.confirm(false),"menu");
             expectEquals("Install Game Code",m.page().rows.get(0).label,"label");
         });
@@ -48,6 +49,10 @@ public final class PublicSetupTest {
             expect(screen.contains("Intent.ACTION_OPEN_DOCUMENT") && screen.contains("CodeBundleImporter.importPublic"),"picker/import wire");
             expect(screen.contains("code.activate(") && screen.contains("new SetupScreen(true)"),"import/activation/discs wire");
             expect(launch.contains("ShipApplication.playerApp(), ShipApplication.publicApp()"),"public menu");
+            String pages=Files.readString(src.resolve("ShellPages.java"));
+            expect(pages.contains("menu.publicApp()") && pages.contains("\"Setup Game\""),"persistent Setup Game menu entry");
+            expect(launch.contains("nav.column(ShellNav.PLAY) == 1") && launch.contains("new SetupScreen()"),"Setup Game menu route");
+            expect(screen.contains("model.tap(row, host.gameRunning())"),"one-tap file row activation");
             expect(start.contains("if (PublicGameCode.isPublic(apkPath)) { done(null); return; }"),"update does not replace import");
             expect(about.contains("PublicGameCode.about(filesDir)"),"About seal wire");
         });
