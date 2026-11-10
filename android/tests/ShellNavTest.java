@@ -312,13 +312,12 @@ public final class ShellNavTest {
             same(3, nav.column(ShellNav.SETTINGS), "unchanged");
         });
 
-        test("touch: a tap on a column item that is not highlighted only moves the highlight; a tap on the highlighted one is A", () -> {
+        test("touch: a tap on an action activates it immediately; pane items can be selected before entering", () -> {
             ShellNav nav = frame();
             same(ShellNav.ACTIVATE, nav.tapColumn(0, false), "Play is highlighted at the start: a tap starts it");
             press(nav, UP);
-            same(ShellNav.MOVED, nav.tapColumn(0, false), "with the highlight on the tab strip a tap on Play only brings it back");
-            same(ShellNav.COLUMN, nav.level(), "onto the item");
-            same(ShellNav.ACTIVATE, nav.tapColumn(0, false), "the second tap starts it");
+            same(ShellNav.ACTIVATE, nav.tapColumn(0, false), "one tap on Play from the strip activates it immediately");
+            same(ShellNav.COLUMN, nav.level(), "the action remains the highlighted item");
             press(nav, R1);
             same(ShellNav.MOVED, nav.tapColumn(2, true), "a category that is not highlighted: the highlight moves");
             same(ShellNav.COLUMN, nav.level(), "and stays on its name");
