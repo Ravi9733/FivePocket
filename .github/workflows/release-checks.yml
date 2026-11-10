@@ -38,3 +38,4 @@ jobs:
           if-no-files-found: error
       # The taint scan needs the game's files, which CI never has. It is run before every release on a machine
       # with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
+# Keep the push trigger: a fresh commit after Actions is enabled starts the validation/build workflow.
