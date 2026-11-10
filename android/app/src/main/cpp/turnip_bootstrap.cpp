@@ -8,6 +8,7 @@
 #include <adrenotools/driver.h>
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -53,14 +54,14 @@ std::string javaString(JNIEnv* env, jstring value) {
 bool ownedRegularFile(const std::string& path, off_t maxSize) {
     struct stat st{};
     return lstat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode) &&
-           st.st_uid == geteuid() && (st.st_mode & 0022) == 0 &&
+           st.st_uid == geteuid() && st.st_gid == getegid() && (st.st_mode & 0002) == 0 &&
            st.st_size > 0 && st.st_size <= maxSize;
 }
 
 bool ownedDirectory(const std::string& path) {
     struct stat st{};
     return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) &&
-           st.st_uid == geteuid() && (st.st_mode & 0022) == 0;
+           st.st_uid == geteuid() && st.st_gid == getegid() && (st.st_mode & 0002) == 0;
 }
 } // namespace
 
