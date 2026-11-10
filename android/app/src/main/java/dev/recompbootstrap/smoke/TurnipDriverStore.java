@@ -79,7 +79,7 @@ final class TurnipDriverStore {
             }
             if(m==null||num(m,"schemaVersion")!=1)throw new Exception("Missing or unsupported ADPKG metadata");
             String name=str(m,"name"),author=str(m,"author"),vendor=str(m,"vendor"),version=str(m,"driverVersion");
-            str(m,"packageVersion");long minApi=num(m,"minApi");String lib=str(m,"libraryName");
+            str(m,"packageVersion");long minApi=num(m,"minApi");String lib=libraryName(m,stage);
             if(name.isEmpty()||author.isEmpty()||vendor.isEmpty()||version.isEmpty()||!safe(lib)||!lib.endsWith(".so"))
                 throw new Exception("ADPKG metadata is incomplete");
             if(minApi>Build.VERSION.SDK_INT)throw new Exception("Driver requires Android API "+minApi);
@@ -89,6 +89,23 @@ final class TurnipDriverStore {
             File dest=new File(root,slug);if(!stage.renameTo(dest))throw new Exception("Could not finish driver installation");
             return new Driver(slug,name,vendor,version,lib);
         }catch(Exception ex){deleteTree(stage);throw ex;}
+    }
+    private static String libraryName(Map<?,?> metadata,File stage)throws Exception{
+        Object declared=metadata.get("libraryName");
+        if(declared instanceof String){
+            String value=((String)declared).trim();
+            if(safe(value)&&value.endsWith(".so"))return value;
+            throw new Exception("ADPKG libraryName is invalid");
+        }
+        File[] files=stage.listFiles();
+        List<String> candidates=new ArrayList<>();
+        if(files!=null)for(File file:files){
+            String n=file.getName();
+            if(file.isFile()&&n.endsWith(".so")&&(n.startsWith("libvulkan")||n.startsWith("vulkan.")))
+                candidates.add(n);
+        }
+        if(candidates.size()!=1)throw new Exception("ADPKG must identify one main Vulkan library");
+        return candidates.get(0);
     }
     private static Map<?,?> meta(File f)throws Exception{
         if(!f.isFile()||f.length()>65536)throw new Exception("Metadata missing");
