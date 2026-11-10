@@ -47,6 +47,20 @@ target_compile_definitions(recomp_bootstrap PRIVATE VK_USE_PLATFORM_ANDROID_KHR=
 find_library(android_log_library log REQUIRED)
 find_library(android_native_library android REQUIRED)
 find_library(vulkan_library vulkan REQUIRED)
+
+# The bootstrap target has no libvulkan dependency. It must install the
+# AdrenoTools hook before recomp_private_debug loads its Vulkan dependency.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../../ext/libadrenotools"
+    "${CMAKE_CURRENT_BINARY_DIR}/libadrenotools")
+add_library(recomp_turnip_bootstrap SHARED turnip_bootstrap.cpp)
+target_compile_features(recomp_turnip_bootstrap PRIVATE cxx_std_17)
+target_compile_options(recomp_turnip_bootstrap PRIVATE -Wall -Wextra -Wpedantic)
+target_link_libraries(recomp_turnip_bootstrap PRIVATE adrenotools "${android_log_library}" dl)
+set_target_properties(recomp_turnip_bootstrap PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
+)
 target_link_libraries(recomp_bootstrap PRIVATE
     "${android_log_library}"
     "${android_native_library}"
