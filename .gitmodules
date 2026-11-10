@@ -1,0 +1,3 @@
+[submodule "ext/libadrenotools"]
+	path = ext/libadrenotools
+	url = https://github.com/bylaws/libadrenotools.git
