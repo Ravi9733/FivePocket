@@ -51,6 +51,7 @@ def main() -> int:
         "app/src/main/cpp/smoke_runtime.cpp",
         "app/src/main/cpp/vulkan_smoke.cpp",
         "app/src/main/cpp/vulkan_smoke.h",
+        "app/src/main/cpp/shader_constant_upload.cpp",
     )
     missing = [path for path in required_files if not (ROOT / path).is_file()]
     if missing:
