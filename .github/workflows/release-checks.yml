@@ -11,5 +11,7 @@ jobs:
         with: {python-version: '3.12'}
       - name: Names, secrets, personal details, release-check tests
         run: python3 tools/release/run_checks.py
+      - name: Turnip integration contract
+        run: python3 android/scripts/validate_turnip.py
       # The taint scan needs the game's files, which CI never has. It is run before every release on a machine
       # with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
