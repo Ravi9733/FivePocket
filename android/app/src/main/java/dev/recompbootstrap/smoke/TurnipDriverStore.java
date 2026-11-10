@@ -64,7 +64,7 @@ final class TurnipDriverStore {
             InputStream raw=c.getContentResolver().openInputStream(uri);if(raw==null)throw new Exception("Cannot open selected ZIP");
             try(ZipInputStream z=new ZipInputStream(new BufferedInputStream(raw))){
                 ZipEntry e;while((e=z.getNextEntry())!=null){
-                    if(++count>256)throw new Exception("ZIP has too many entries");
+                    if(++count>MAX_ENTRIES)throw new Exception("ZIP has too many entries");
                     String path=e.getName();
                     if(e.isDirectory()){z.closeEntry();continue;}
                     String leaf=zipLeaf(path);
