@@ -48,8 +48,8 @@ final class TurnipDriverStore {
         if(!tmp.renameTo(dst)){tmp.delete();throw new Exception("Cannot save selection");}
     }
     Driver install(Context c,Uri uri)throws Exception{
-        if(Build.VERSION.SDK_INT<27||!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a"))
-            throw new Exception("Custom Adreno drivers need Android 8.1+ and arm64");
+        if(Build.VERSION.SDK_INT<28||!Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a"))
+            throw new Exception("Custom Adreno drivers need Android 9+ and arm64");
         if(!root.exists()&&!root.mkdirs())throw new Exception("Cannot create private driver folder");
         File stage=new File(root,".install-"+Long.toHexString(System.nanoTime()));if(!stage.mkdir())throw new Exception("Cannot create staging folder");
         Map<?,?> m=null;Set<String> names=new HashSet<>();long total=0;int count=0;
