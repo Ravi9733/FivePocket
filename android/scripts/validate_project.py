@@ -75,9 +75,12 @@ def main() -> int:
     require("app/src/debug/cpp/private_trace_jni.cpp", r'O_NOFOLLOW', "private library symlink rejection")
     require("app/src/debug/cpp/private_trace_jni.cpp", r'alarm\(traceRun\?0:15\)', "bounded per-mode wall deadline")
     require("app/src/debug/java/dev/recompbootstrap/smoke/PrivateTraceActivity.java", r'MessageDigest.getInstance\("SHA-256"\)', "explicit library integrity check")
-    for path in ("app/src/main/AndroidManifest.xml", "app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java"):
-        if "PrivateTraceActivity" in (ROOT/path).read_text(encoding="utf-8"):
-            raise AssertionError("private trace launch must stay in the debug source set")
+    bootstrap_activity = (ROOT / "app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java").read_text(encoding="utf-8")
+    if "PrivateTraceActivity" in bootstrap_activity:
+        raise AssertionError("the public menu activity must not directly reference the private trace activity")
+    main_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    if not re.search(r'<activity\\s+android:name="\\.PrivateTraceActivity"(?:(?!</activity>).)*android:exported="false"(?:(?!</activity>).)*</activity>', main_manifest, re.DOTALL):
+        raise AssertionError("the private trace activity must be declared non-exported in the main manifest")
     require("app/src/main/cpp/smoke_jni.cpp", r'Java_dev_recompbootstrap_smoke_NativeBridge_create', "JNI create entry point")
     require("app/src/main/cpp/smoke_jni.cpp", r'ANativeWindow_fromSurface', "JNI native-window adapter")
     require("app/src/main/cpp/guest_address_space.h", r'std::uint64_t\{1\}\s*<<\s*32U', "4 GiB guest address space")
