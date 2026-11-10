@@ -64,32 +64,74 @@ final class TurnipDriverStore {
             InputStream raw=c.getContentResolver().openInputStream(uri);if(raw==null)throw new Exception("Cannot open selected ZIP");
             try(ZipInputStream z=new ZipInputStream(new BufferedInputStream(raw))){
                 ZipEntry e;while((e=z.getNextEntry())!=null){
-                    if(++count>MAX_ENTRIES)throw new Exception("ZIP has too many files");
-                    String n=e.getName();if(e.isDirectory()||!safe(n)||!names.add(n))throw new Exception("Only unique files at ZIP root are accepted");
-                    if("meta.json".equals(n)){
+                    if(++count>256)throw new Exception("ZIP has too many entries");
+                    String path=e.getName();
+                    if(e.isDirectory()){z.closeEntry();continue;}
+                    String leaf=zipLeaf(path);
+                    if(!names.add(leaf))throw new Exception("ZIP contains duplicate file names: "+leaf);
+                    if("meta.json".equalsIgnoreCase(leaf)){
                         byte[] b=readEntry(z,64*1024);Object parsed=JsonLite.parse(new String(b,StandardCharsets.UTF_8));
-                        if(!(parsed instanceof Map))throw new Exception("meta.json must be an object");m=(Map<?,?>)parsed;
+                        if(!(parsed instanceof Map))throw new Exception("meta.json must be a JSON object");m=(Map<?,?>)parsed;
                         try(FileOutputStream metadata=new FileOutputStream(new File(stage,"meta.json"))){metadata.write(b);metadata.getFD().sync();}
-                    }else if(n.endsWith(".so")){
-                        File dest=new File(stage,n);long size=copyEntry(z,dest,Math.min(MAX_LIBRARY,MAX_TOTAL-total));verifyElf(dest);total+=size;
+                    }else if(leaf.endsWith(".so")){
+                        File dest=new File(stage,leaf);long size=copyEntry(z,dest,Math.min(MAX_LIBRARY,MAX_TOTAL-total));verifyElf(dest);total+=size;
                         if(total>MAX_TOTAL)throw new Exception("Driver package is too large");
-                    }else throw new Exception("Unexpected file in driver ZIP: "+n);
+                    }else if(leaf.length()>255)throw new Exception("ZIP entry name is too long");
                     z.closeEntry();
                 }
             }
-            if(m==null||num(m,"schemaVersion")!=1)throw new Exception("Missing or unsupported ADPKG metadata");
-            String name=str(m,"name"),author=str(m,"author"),vendor=str(m,"vendor"),version=str(m,"driverVersion");
-            str(m,"packageVersion");long minApi=num(m,"minApi");String lib=libraryName(m,stage);
-            if(name.isEmpty()||author.isEmpty()||!("Qualcomm".equals(vendor)||"Mesa".equals(vendor))
-                    ||!version.matches("[0-9]+\\.[0-9]+\\.[0-9]+(-.+)?")||!safe(lib)||!lib.endsWith(".so"))
-                throw new Exception("ADPKG metadata is incomplete or does not match the ADPKG schema");
+            String name=optionalString(m,"name"),version=optionalString(m,"driverVersion"),vendor=optionalString(m,"vendor");
+            if(m!=null){
+                Object schema=m.get("schemaVersion");
+                if(schema!=null&&(!(schema instanceof Number)||((Number)schema).intValue()!=1))
+                    throw new Exception("Unsupported ADPKG schemaVersion");
+            }
+            if(name.isEmpty())name=displayName(c,uri);
+            if(name.toLowerCase(Locale.ROOT).endsWith(".zip"))name=name.substring(0,name.length()-4);
+            if(name.isEmpty())name="Imported Turnip driver";
+            if(name.length()>128)name=name.substring(0,128);
+            if(version.isEmpty())version="0.0.0";
+            if(version.matches("v[0-9].*"))version=version.substring(1);
+            if(!version.matches("[0-9]+\\.[0-9]+\\.[0-9]+(-[A-Za-z0-9.+_-]+)?"))version="0.0.0";
+            if(vendor.isEmpty())vendor="Mesa";
+            if(!"Qualcomm".equals(vendor)&&!"Mesa".equals(vendor))vendor="Mesa";
+            long minApi=optionalNumber(m,"minApi",28);
             if(minApi>Build.VERSION.SDK_INT)throw new Exception("Driver requires Android API "+minApi);
+            String lib=libraryName(m,stage);
+            if(!safe(lib)||!lib.endsWith(".so"))throw new Exception("Main Vulkan library name is invalid");
             File main=new File(stage,lib);if(!main.isFile()||main.length()==0||main.length()>MAX_LIBRARY)throw new Exception("Main Vulkan library is missing");
             verifyElf(main);
             String slug=slug(name+"-"+version)+"-"+Long.toHexString(System.nanoTime());
             File dest=new File(root,slug);if(!stage.renameTo(dest))throw new Exception("Could not finish driver installation");
             return new Driver(slug,name,vendor,version,lib);
         }catch(Exception ex){deleteTree(stage);throw ex;}
+    }
+    private static String zipLeaf(String path)throws Exception{
+        if(path==null||path.isEmpty()||path.startsWith("/")||path.indexOf('\\\\')>=0)
+            throw new Exception("Unsafe ZIP entry path");
+        String[] parts=path.split("/");
+        for(String part:parts)if(part.isEmpty()||".".equals(part)||"..".equals(part))
+            throw new Exception("Unsafe ZIP entry path");
+        String leaf=parts[parts.length-1];
+        if(!safe(leaf))throw new Exception("Unsupported ZIP entry name: "+leaf);
+        return leaf;
+    }
+    private static String optionalString(Map<?,?> m,String key){
+        if(m==null)return "";Object v=m.get(key);return v instanceof String?((String)v).trim():"";
+    }
+    private static long optionalNumber(Map<?,?> m,String key,long fallback)throws Exception{
+        if(m==null||!m.containsKey(key))return fallback;
+        Object v=m.get(key);if(!(v instanceof Number))throw new Exception("ADPKG field must be numeric: "+key);
+        double d=((Number)v).doubleValue();
+        if(!Double.isFinite(d)||d!=Math.rint(d)||d<Long.MIN_VALUE||d>Long.MAX_VALUE)
+            throw new Exception("ADPKG field must be an integer: "+key);
+        return (long)d;
+    }
+    private static String displayName(Context c,Uri uri){
+        try(android.database.Cursor cursor=c.getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){
+            if(cursor!=null&&cursor.moveToFirst()){String value=cursor.getString(0);if(value!=null)return value;}
+        }catch(Exception ignored){}
+        return "Imported Turnip driver";
     }
     private static String libraryName(Map<?,?> metadata,File stage)throws Exception{
         Object declared=metadata.get("libraryName");
