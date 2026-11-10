@@ -107,7 +107,7 @@ final class TurnipDriverStore {
         }catch(Exception ex){deleteTree(stage);throw ex;}
     }
     private static String zipLeaf(String path)throws Exception{
-        if(path==null||path.isEmpty()||path.startsWith("/")||path.indexOf('\\\\')>=0)
+        if(path==null||path.isEmpty()||path.startsWith("/")||path.indexOf('\\')>=0)
             throw new Exception("Unsafe ZIP entry path");
         String[] parts=path.split("/");
         for(String part:parts)if(part.isEmpty()||".".equals(part)||"..".equals(part))
