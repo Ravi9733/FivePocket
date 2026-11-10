@@ -184,9 +184,14 @@ public final class PrivateTraceActivity extends Activity {
         launcherStart=InputDispatchOption.closesUsedRequest(1,getFilesDir(),requestId);
         // Install the optional custom Vulkan loader before loading the JNI library
         // that links libvulkan.so. This must run in the dedicated private_trace process.
-        System.loadLibrary("recomp_turnip_bootstrap");
-        boolean customVulkan = prepareVulkanDriver(getFilesDir().getAbsolutePath(),
-                getApplicationInfo().nativeLibraryDir, getCacheDir().getAbsolutePath());
+        boolean customVulkan = false;
+        try {
+            System.loadLibrary("recomp_turnip_bootstrap");
+            customVulkan = prepareVulkanDriver(getFilesDir().getAbsolutePath(),
+                    getApplicationInfo().nativeLibraryDir, getCacheDir().getAbsolutePath());
+        } catch (UnsatisfiedLinkError unavailable) {
+            Log.w(TAG, "Custom Vulkan bootstrap unavailable; continuing with system Vulkan", unavailable);
+        }
         Log.i(TAG, customVulkan ? "Custom Vulkan driver selected" : "Using system Vulkan driver");
         System.loadLibrary("recomp_private_debug");
         if(gameRequested)gamepadInput=new PrivateGamepadInput(this);
