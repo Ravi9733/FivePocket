@@ -79,7 +79,7 @@ def main() -> int:
     if "PrivateTraceActivity" in bootstrap_activity:
         raise AssertionError("the public menu activity must not directly reference the private trace activity")
     main_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    if not re.search(r'<activity\\s+android:name="\\.PrivateTraceActivity"(?:(?!</activity>).)*android:exported="false"(?:(?!</activity>).)*</activity>', main_manifest, re.DOTALL):
+    if not re.search(r'<activity\s+android:name="\.PrivateTraceActivity"(?:(?!</activity>).)*android:exported="false"(?:(?!</activity>).)*</activity>', main_manifest, re.DOTALL):
         raise AssertionError("the private trace activity must be declared non-exported in the main manifest")
     require("app/src/main/cpp/smoke_jni.cpp", r'Java_dev_recompbootstrap_smoke_NativeBridge_create', "JNI create entry point")
     require("app/src/main/cpp/smoke_jni.cpp", r'ANativeWindow_fromSurface', "JNI native-window adapter")
