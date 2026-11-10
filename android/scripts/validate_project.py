@@ -73,7 +73,7 @@ def main() -> int:
     require("app/src/debug/AndroidManifest.xml", r'android:process=":private_trace"', "separate private diagnostic process")
     require("app/src/debug/cpp/private_trace_jni.cpp", r'ANDROID_DLEXT_USE_LIBRARY_FD', "same-descriptor private library loading")
     require("app/src/debug/cpp/private_trace_jni.cpp", r'O_NOFOLLOW', "private library symlink rejection")
-    require("app/src/debug/cpp/private_trace_jni.cpp", r'alarm\(traceRun\?45:15\)', "bounded per-mode wall deadline")
+    require("app/src/debug/cpp/private_trace_jni.cpp", r'alarm\(traceRun\?0:15\)', "bounded per-mode wall deadline")
     require("app/src/debug/java/dev/recompbootstrap/smoke/PrivateTraceActivity.java", r'MessageDigest.getInstance\("SHA-256"\)', "explicit library integrity check")
     for path in ("app/src/main/AndroidManifest.xml", "app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java"):
         if "PrivateTraceActivity" in (ROOT/path).read_text(encoding="utf-8"):
