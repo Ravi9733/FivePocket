@@ -9,11 +9,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Restore checksum-verified upstream native sources
+        run: python3 android/scripts/restore_release_native_sources.py
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - name: Names, secrets, personal details, release-check tests
         run: python3 tools/release/run_checks.py
       - name: Turnip integration contract
         run: python3 android/scripts/validate_turnip.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android build toolchain
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Compile signed public Android APK
+        working-directory: android
+        run: bash ./gradlew --no-daemon assemblePublic -PpublicTestSigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FivePocket-turnip-public-test-apk
+          path: android/app/build/outputs/apk/public/*.apk
+          if-no-files-found: error
       # The taint scan needs the game's files, which CI never has. It is run before every release on a machine
       # with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
