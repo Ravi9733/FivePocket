@@ -185,6 +185,11 @@ final class LauncherMenu {
         return selfInstalling;
     }
 
+    /** Public builds keep a direct Setup Game shortcut even after the installed files become ready. */
+    boolean publicApp() {
+        return publicApp;
+    }
+
     /** True when the state line is drawn in the warning colour: something a start needs is not in place. */
     boolean stateLineIsWarning() {
         return install != null && !install.ready();
