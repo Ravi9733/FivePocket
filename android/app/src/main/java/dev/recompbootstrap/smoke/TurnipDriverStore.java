@@ -134,7 +134,7 @@ final class TurnipDriverStore {
         return "Imported Turnip driver";
     }
     private static String libraryName(Map<?,?> metadata,File stage)throws Exception{
-        Object declared=metadata.get("libraryName");
+        Object declared=metadata==null?null:metadata.get("libraryName");
         if(declared instanceof String){
             String value=((String)declared).trim();
             if(safe(value)&&value.endsWith(".so"))return value;
