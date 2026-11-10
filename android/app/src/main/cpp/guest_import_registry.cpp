@@ -2870,6 +2870,7 @@ void diagnosticDumpImports() {
 }
 
 extern "C" std::atomic<unsigned> recomp_v348_audio_spin_us; // v348 (generic_renderer.cpp's switch poll)
+extern "C" { std::atomic<unsigned> recomp_v348_audio_spin_us{0}; } // v348: Android bootstrap default; diagnostic spin budget stays disabled unless configured.
 namespace {
 // scene-wait (scene_wait_sw.h; diag-sw-watch / diag-sw-watch-500): called after the unchanged Sleep(0) fast path. When this
 // is main's Sleep(0) inside the scene-item poll (SleepEx's frame at guest r1 = sp), the guest would call Sleep(0) again and
