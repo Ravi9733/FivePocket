@@ -79,7 +79,7 @@ def main() -> int:
     if "PrivateTraceActivity" in bootstrap_activity:
         raise AssertionError("the public menu activity must not directly reference the private trace activity")
     main_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-    private_activity = re.search(r'<activity\b[^>]*android:name="\ .PrivateTraceActivity"[^>]*>', main_manifest, re.DOTALL)
+    private_activity = re.search(r'<activity\b[^>]*android:name="\.PrivateTraceActivity"[^>]*>', main_manifest, re.DOTALL)
     if not private_activity or 'android:exported="false"' not in private_activity.group(0):
         raise AssertionError("the private trace activity must be declared non-exported in the main manifest")
 
