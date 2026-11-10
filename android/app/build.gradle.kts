@@ -105,6 +105,14 @@ android {
         }
     }
 
+    // Required by libadrenotools: hook libraries must be extracted into nativeLibraryDir
+    // so the linker-namespace hook can load them from the exact ApplicationInfo path.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildFeatures {
         buildConfig = false
     }
