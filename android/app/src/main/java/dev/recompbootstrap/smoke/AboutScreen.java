@@ -297,6 +297,7 @@ final class AboutScreen {
             case ShellPages.ABOUT_APP: return versionLine + "\n" + (ship ? ShipAdvice.ABOUT_APP : "Private build - not for distribution.");
             case ShellPages.ABOUT_BUILD: return namesBlock.isEmpty() ? codeLine : codeLine + "\n\n" + namesBlock;
             case ShellPages.ABOUT_NOTICES: return Scene.reflow(ship ? licenceNoticesPlain() : licenceNotices());
+            case ShellPages.ABOUT_GPU_DRIVERS: return "Custom Vulkan driver support uses AdrenoTools. Import a compatible ADPKG ZIP, then select the installed Turnip driver. It activates on the next game start; System Vulkan remains available as a fallback.";
             case ShellPages.ABOUT_CAPTURES: return captures;
             default: return ShellPages.TEXT_SELF_TEST;
         }
@@ -376,7 +377,7 @@ final class AboutScreen {
     /** True when the highlight can go into the text to scroll it. */
     boolean enterable() {
         int section = nav.column(ShellNav.ABOUT);
-        return section != ShellPages.ABOUT_SELF_TEST && section != ShellPages.ABOUT_CAPTURES && ShellPages.aboutScrollable(lines().size());
+        return section != ShellPages.ABOUT_SELF_TEST && section != ShellPages.ABOUT_GPU_DRIVERS && section != ShellPages.ABOUT_CAPTURES && ShellPages.aboutScrollable(lines().size());
     }
 
     /** A command while the highlight is in the text. */
