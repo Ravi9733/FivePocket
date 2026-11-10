@@ -28,7 +28,7 @@ final class PublicSetupScreen implements Screen {
             public void onHit(int id) {
                 int base = id / 100 * 100, row = id - base;
                 if (base == MenuLayout.HIT_ROW && row >= 0 && row < 3 && !model.busy) {
-                    if (model.focus == row) action(model.confirm(host.gameRunning())); else model.focus = row;
+                    action(model.tap(row, host.gameRunning()));
                     render();
                 } else if (base == MenuLayout.HIT_PROMPT) onNav(row, false);
             }
