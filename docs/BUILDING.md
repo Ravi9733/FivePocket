@@ -56,8 +56,11 @@ not bundled with FivePocket. Android 9+ and arm64-v8a are required. Selection ta
 process is started again.
 
 The static Turnip check verifies the ZIP/selection/native-loader contract; it does not replace an NDK build or
-on-device compatibility test. A complete APK still requires all native sources named by the Android CMake
-project and the app's normal source-build prerequisites.
+on-device compatibility test. In the current public Git tree, the Android CMake project references native files
+that are not present: `smoke_jni.cpp`, `smoke_runtime.cpp`, `vulkan_smoke.cpp`, `vulkan_smoke.h`, and
+`shader_constant_upload.cpp`. Restore the matching files from the release's complete source archive before
+attempting an APK build; do not substitute empty stubs. Until those sources are restored, the Turnip integration
+is committed but cannot be qualified as a buildable or device-tested APK.
 
 The public build refuses any asset other than its two text records (`prePublicBuild`). Sign it with your own key.
 
