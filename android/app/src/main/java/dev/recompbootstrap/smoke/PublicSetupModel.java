@@ -7,6 +7,12 @@ final class PublicSetupModel {
     boolean busy, ready;
     String notice = PublicCodeWords.HELP;
     long done, total;
+    /** A touch is an explicit choice: focus and activate the tapped setup row in one action. */
+    int tap(int row, boolean gameRunning) {
+        if (row < 0 || row > 2) return NONE;
+        focus = row;
+        return confirm(gameRunning);
+    }
     int confirm(boolean gameRunning) {
         if (busy) return NONE;
         if (gameRunning) { notice = PublicCodeWords.RUNNING; return NONE; }
