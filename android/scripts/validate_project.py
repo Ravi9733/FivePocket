@@ -52,6 +52,8 @@ def main() -> int:
         "app/src/main/cpp/vulkan_smoke.cpp",
         "app/src/main/cpp/vulkan_smoke.h",
         "app/src/main/cpp/shader_constant_upload.cpp",
+        "app/src/main/cpp/shader_constant_upload.h",
+        "app/src/main/cpp/smoke_runtime.h",
     )
     missing = [path for path in required_files if not (ROOT / path).is_file()]
     if missing:
@@ -119,7 +121,7 @@ def main() -> int:
     require("app/src/main/cpp/guest_title_environment.cpp", r'originalImportSlotValue_', "reversible executable-module data import")
     require("app/src/main/cpp/guest_xex_header.cpp", r'MaximumOptionalHeaders', "bounded XEX optional-header count")
     require("app/src/main/cpp/vulkan_smoke.cpp", r'vkCreateAndroidSurfaceKHR', "Vulkan Android surface")
-    require("app/src/main/cpp/vulkan_smoke.cpp", r'VK_ATTACHMENT_LOAD_OP_CLEAR', "Vulkan clear pass")
+    require("app/src/main/cpp/vulkan_smoke.cpp", r'vkCmdClearColorImage', "Vulkan swapchain clear")
     require("app/src/main/cpp/vulkan_smoke.cpp", r'vkQueuePresentKHR', "Vulkan presentation")
     require("app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java", r'SurfaceHolder\.Callback', "SurfaceView lifecycle")
 
