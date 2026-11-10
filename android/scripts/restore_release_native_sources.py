@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Restore the five Android native files omitted from the public Git tree.
 
-The upstream release source archive is pinned by SHA-256. Only the exact
-CMake-referenced files are extracted; archive paths and file types are checked.
+The upstream release source archive is pinned by SHA-256. Only exact,
+CMake-referenced basenames are extracted after checking archive paths/types.
 """
 from __future__ import annotations
 
@@ -40,19 +40,27 @@ def main() -> None:
     with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:xz") as archive:
         members = archive.getmembers()
         for name in NAMES:
-            suffix = PurePosixPath("android/app/src/main/cpp") / name
+            # Release source bundles may store a path prefix different from the
+            # Git checkout. Match the exact basename, then require uniqueness.
             matches = [
                 member for member in members
-                if PurePosixPath(member.name).as_posix().endswith(suffix.as_posix())
+                if PurePosixPath(member.name).name == name
             ]
             if len(matches) != 1:
-                raise SystemExit(f"expected exactly one archived source for {name}; found {len(matches)}")
+                candidates = [
+                    member.name for member in members
+                    if PurePosixPath(member.name).name == name
+                ]
+                raise SystemExit(
+                    f"expected exactly one archived source named {name}; "
+                    f"found {len(matches)}; candidates={candidates}"
+                )
             member = matches[0]
             if not member.isfile() or member.size <= 0 or member.size > MAX_MEMBER:
-                raise SystemExit(f"unsafe or invalid archive member for {name}")
+                raise SystemExit(f"unsafe or invalid archive member for {name}: {member.name}")
             source = archive.extractfile(member)
             if source is None:
-                raise SystemExit(f"cannot read archived source for {name}")
+                raise SystemExit(f"cannot read archived source {name}: {member.name}")
             data = source.read(MAX_MEMBER + 1)
             if len(data) != member.size or len(data) > MAX_MEMBER:
                 raise SystemExit(f"invalid size for archived source {name}")
