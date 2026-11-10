@@ -1,6 +1,7 @@
 #pragma once
 #include "smoke_runtime.h"
 #include <android/native_window.h>
+#include <vulkan/vulkan.h>
 #include <cstdint>
 #include <vector>
 
