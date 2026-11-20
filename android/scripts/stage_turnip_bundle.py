@@ -11,7 +11,7 @@ import re
 import zipfile
 from pathlib import Path
 
-PACKAGE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
+PACKAGE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")
 
 
 def digest(data: bytes) -> str:
@@ -62,7 +62,7 @@ def stage(apk: Path, output: Path, package: str) -> None:
         config["filesRoot"] = new_root
         config["startRequest"]["size"] = len(rewritten)
         config["startRequest"]["sha256"] = digest(rewritten)
-        config_bytes = (json.dumps(config, indent=2, ensure_ascii=False) + "\\n").encode()
+        config_bytes = (json.dumps(config, indent=2, ensure_ascii=False) + "\n").encode()
 
         for name in sorted(names):
             if not name.startswith("assets/ship/") or name.endswith("/"):
