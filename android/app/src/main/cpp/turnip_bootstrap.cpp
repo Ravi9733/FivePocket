@@ -35,7 +35,7 @@ bool privateProcess() {
     if (bytes <= 0) return false;
 
     std::string processName(name, static_cast<std::size_t>(bytes));
-    const auto terminator = processName.find('\\0');
+    const auto terminator = processName.find('\0');
     if (terminator != std::string::npos) processName.resize(terminator);
     constexpr char suffix[] = ":private_trace";
     constexpr std::size_t suffixLength = sizeof(suffix) - 1;
