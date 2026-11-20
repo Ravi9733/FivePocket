@@ -51,6 +51,9 @@ def main():
     require(screen, r'Use System Vulkan', "provide system Vulkan fallback")
     require(screen, r'store\.select\(d\)', "activate imported driver")
     require(native, r'private_trace', "limit hook installation to private process")
+    require(native, r'constexpr char suffix\\[\\]\\s*=\\s*":private_trace"', "edition-neutral private-process suffix")
+    if "dev.recompbootstrap.smoke:private_trace" in native:
+        raise AssertionError("Turnip bootstrap must not hard-code one edition's application ID")
     require(native, r'selectionPath\s*=\s*root\s*\+\s*"/selected"', "read matching selected-driver path")
     require(native, r'std::getline\(selection, folder\).*std::getline\(selection, library\)', "read two-line selection protocol")
     require(native, r'adrenotools_open_libvulkan', "install AdrenoTools Vulkan hook")
