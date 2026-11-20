@@ -61,7 +61,8 @@ def main() -> int:
     if missing:
         raise AssertionError("missing files: " + ", ".join(missing))
 
-    require("app/build.gradle.kts", rf'applicationId\s*=\s*"{re.escape(PACKAGE)}"', "package ID")
+    require("app/build.gradle.kts", r'val appId = providers\.gradleProperty\("turnipApplicationId"\)\.orElse\("dev\.recompbootstrap\.smoke"\)\.get\(\)', "separate Turnip package ID with safe default")
+    require("app/build.gradle.kts", r'applicationId\s*=\s*appId', "application ID binding")
     require("app/build.gradle.kts", rf'abiFilters\s*\+=\s*"{ABI}"', "ARM64-only ABI filter")
     require("app/build.gradle.kts", r'buildToolsVersion\s*=\s*"35\.0\.0"', "pinned Android build tools")
     require("app/build.gradle.kts", r'ndkVersion\s*=\s*"[0-9.]+"', "pinned NDK")
