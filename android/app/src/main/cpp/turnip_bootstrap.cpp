@@ -24,13 +24,23 @@ std::atomic_flag attempted = ATOMIC_FLAG_INIT;
 void* driverHandle = nullptr;
 
 bool privateProcess() {
-    char name[128]{};
+    // The same source is built for the regular and single-screen editions, whose
+    // application IDs differ. Check the isolated process suffix rather than
+    // hard-coding one package name (the APK's actual package is supplied by Android).
+    char name[256]{};
     const int fd = open("/proc/self/cmdline", O_RDONLY | O_CLOEXEC);
     if (fd < 0) return false;
     const ssize_t bytes = read(fd, name, sizeof(name) - 1);
     close(fd);
-    return bytes > 0 &&
-        std::strcmp(name, "dev.recompbootstrap.smoke:private_trace") == 0;
+    if (bytes <= 0) return false;
+
+    std::string processName(name, static_cast<std::size_t>(bytes));
+    const auto terminator = processName.find('\\0');
+    if (terminator != std::string::npos) processName.resize(terminator);
+    constexpr char suffix[] = ":private_trace";
+    constexpr std::size_t suffixLength = sizeof(suffix) - 1;
+    return processName.size() > suffixLength &&
+        processName.compare(processName.size() - suffixLength, suffixLength, suffix) == 0;
 }
 
 bool safeComponent(const std::string& value) {
