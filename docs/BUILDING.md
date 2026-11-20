@@ -37,11 +37,30 @@ The exact revisions a release was built from, and the complete changed source, a
 
 ## The app
 
+This fork includes an optional AdrenoTools Vulkan-driver bootstrap for compatible Android Adreno devices.
+The native build uses libadrenotools and its nested linker-namespace bypass submodule. After cloning, initialise
+both levels before invoking Gradle:
+
 ```
+git submodule update --init --recursive
 cd android
 ./gradlew assemblePublic        # unsigned public APK: loader and menus only, no game code
-python3 ../android/scripts/validate_project.py
+python3 scripts/validate_project.py
+python3 scripts/validate_turnip.py
 ```
+
+In the app, open **About → GPU Drivers** to import an AdrenoTools ADPKG ZIP, select an installed driver, or
+return to Android's system Vulkan driver. The importer accepts root-level ADPKG packages with `meta.json` and
+ARM64 ELF shared libraries; drivers are extracted into app-private storage. Custom drivers are optional and are
+not bundled with FivePocket. Android 9+ and arm64-v8a are required. Selection takes effect when the private game
+process is started again.
+
+The static Turnip check verifies the ZIP/selection/native-loader contract; it does not replace an NDK build or
+on-device compatibility test. In the current public Git tree, the Android CMake project references native files
+that are not present: `smoke_jni.cpp`, `smoke_runtime.cpp`, `vulkan_smoke.cpp`, `vulkan_smoke.h`, and
+`shader_constant_upload.cpp`. Restore the matching files from the release's complete source archive before
+attempting an APK build; do not substitute empty stubs. Until those sources are restored, the Turnip integration
+is committed but cannot be qualified as a buildable or device-tested APK.
 
 The public build refuses any asset other than its two text records (`prePublicBuild`). Sign it with your own key.
 

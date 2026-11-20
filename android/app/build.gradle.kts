@@ -105,6 +105,14 @@ android {
         }
     }
 
+    // Required by libadrenotools: hook libraries must be extracted into nativeLibraryDir
+    // so the linker-namespace hook can load them from the exact ApplicationInfo path.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildFeatures {
         buildConfig = false
     }
@@ -133,10 +141,14 @@ tasks.matching { it.name == "prePublicBuild" }.configureEach {
     val source = file("src/public/assets")
     val main = file("src/main/assets")
     val prebuilt = listOf(file("src/main/jniLibs"), file("src/public/jniLibs"))
+    val allowAssetFreePublicTest = project.hasProperty("publicTestSigned")
     doFirst {
         val expected = setOf("public/config.json", "public/start-request.bin")
         val found = source.walkTopDown().filter { it.isFile }.map { it.relativeTo(source).invariantSeparatorsPath }.toSet()
-        if (found != expected) throw GradleException("The public app needs exactly its two metadata assets.")
+        // A signed publicTestSigned build is an asset-free loader/menu smoke APK. Without the
+        // two staged metadata records it deliberately opens the developer menu and cannot start a game.
+        if (found != expected && !(found.isEmpty() && allowAssetFreePublicTest))
+            throw GradleException("The public app needs exactly its two metadata assets (or none for publicTestSigned).")
         val shared = main.walkTopDown().filter { it.isFile }.map { it.relativeTo(main).invariantSeparatorsPath }.toSet()
         // menu-redesign 2026-10-25 (the owner: "implement it with Nunito Sans"): the menus' typeface and its OFL licence, reviewed.
         // 2026-11-05 (owner-approved): the GPLv3 text the app itself is under (the repository's COPYING, byte for byte).

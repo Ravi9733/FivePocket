@@ -31,6 +31,8 @@ def main() -> int:
         "app/src/main/java/dev/recompbootstrap/smoke/NativeBridge.java",
         "app/src/main/cpp/CMakeLists.txt",
         "app/src/main/cpp/guest_address_space.cpp",
+        "app/src/main/cpp/guest_native_initialization.cpp",
+        "app/src/main/cpp/xenos_command_stream.cpp",
         "app/src/main/cpp/guest_address_space.h",
         "app/src/main/cpp/guest_execution_guard.cpp",
         "app/src/main/cpp/guest_execution_guard.h",
@@ -51,6 +53,9 @@ def main() -> int:
         "app/src/main/cpp/smoke_runtime.cpp",
         "app/src/main/cpp/vulkan_smoke.cpp",
         "app/src/main/cpp/vulkan_smoke.h",
+        "app/src/main/cpp/shader_constant_upload.cpp",
+        "app/src/main/cpp/shader_constant_upload.h",
+        "app/src/main/cpp/smoke_runtime.h",
     )
     missing = [path for path in required_files if not (ROOT / path).is_file()]
     if missing:
@@ -68,11 +73,16 @@ def main() -> int:
     require("app/src/debug/AndroidManifest.xml", r'android:process=":private_trace"', "separate private diagnostic process")
     require("app/src/debug/cpp/private_trace_jni.cpp", r'ANDROID_DLEXT_USE_LIBRARY_FD', "same-descriptor private library loading")
     require("app/src/debug/cpp/private_trace_jni.cpp", r'O_NOFOLLOW', "private library symlink rejection")
-    require("app/src/debug/cpp/private_trace_jni.cpp", r'alarm\(traceRun\?45:15\)', "bounded per-mode wall deadline")
+    require("app/src/debug/cpp/private_trace_jni.cpp", r'alarm\(traceRun\?0:15\)', "bounded per-mode wall deadline")
     require("app/src/debug/java/dev/recompbootstrap/smoke/PrivateTraceActivity.java", r'MessageDigest.getInstance\("SHA-256"\)', "explicit library integrity check")
-    for path in ("app/src/main/AndroidManifest.xml", "app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java"):
-        if "PrivateTraceActivity" in (ROOT/path).read_text(encoding="utf-8"):
-            raise AssertionError("private trace launch must stay in the debug source set")
+    bootstrap_activity = (ROOT / "app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java").read_text(encoding="utf-8")
+    if "PrivateTraceActivity" in bootstrap_activity:
+        raise AssertionError("the public menu activity must not directly reference the private trace activity")
+    main_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    private_activity = re.search(r'<activity\b[^>]*android:name="\.PrivateTraceActivity"[^>]*>', main_manifest, re.DOTALL)
+    if not private_activity or 'android:exported="false"' not in private_activity.group(0):
+        raise AssertionError("the private trace activity must be declared non-exported in the main manifest")
+
     require("app/src/main/cpp/smoke_jni.cpp", r'Java_dev_recompbootstrap_smoke_NativeBridge_create', "JNI create entry point")
     require("app/src/main/cpp/smoke_jni.cpp", r'ANativeWindow_fromSurface', "JNI native-window adapter")
     require("app/src/main/cpp/guest_address_space.h", r'std::uint64_t\{1\}\s*<<\s*32U', "4 GiB guest address space")
@@ -118,7 +128,7 @@ def main() -> int:
     require("app/src/main/cpp/guest_title_environment.cpp", r'originalImportSlotValue_', "reversible executable-module data import")
     require("app/src/main/cpp/guest_xex_header.cpp", r'MaximumOptionalHeaders', "bounded XEX optional-header count")
     require("app/src/main/cpp/vulkan_smoke.cpp", r'vkCreateAndroidSurfaceKHR', "Vulkan Android surface")
-    require("app/src/main/cpp/vulkan_smoke.cpp", r'VK_ATTACHMENT_LOAD_OP_CLEAR', "Vulkan clear pass")
+    require("app/src/main/cpp/vulkan_smoke.cpp", r'vkCmdClearColorImage', "Vulkan swapchain clear")
     require("app/src/main/cpp/vulkan_smoke.cpp", r'vkQueuePresentKHR', "Vulkan presentation")
     require("app/src/main/java/dev/recompbootstrap/smoke/BootstrapActivity.java", r'SurfaceHolder\.Callback', "SurfaceView lifecycle")
 

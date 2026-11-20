@@ -304,6 +304,8 @@ final class LauncherScreen implements Screen, UiKit.Listener {
             perform(menu.tap(LauncherMenu.CONTROLLER_CHECK, host.gameRunning()));
         } else if (tab == ShellNav.ABOUT && nav.column(ShellNav.ABOUT) == ShellPages.ABOUT_SELF_TEST) {
             about.startSelfTest();
+        } else if (tab == ShellNav.ABOUT && nav.column(ShellNav.ABOUT) == ShellPages.ABOUT_GPU_DRIVERS) {
+            about.startGpuDrivers();
         } else if (tab == ShellNav.ABOUT && nav.column(ShellNav.ABOUT) == ShellPages.ABOUT_CAPTURES) {
             about.copyCaptures();   // "Copy To Pictures"; does nothing when there is nothing to copy (no prompt then)
         }

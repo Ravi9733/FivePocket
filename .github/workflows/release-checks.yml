@@ -1,5 +1,5 @@
 name: release checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
@@ -7,9 +7,44 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
+      - name: Restore checksum-verified upstream native sources
+        run: python3 android/scripts/restore_release_native_sources.py
+      - name: Validate Android project structure
+        run: python3 android/scripts/validate_project.py
       - name: Names, secrets, personal details, release-check tests
         run: python3 tools/release/run_checks.py
+      - name: Turnip integration contract
+        run: python3 android/scripts/validate_turnip.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          packages: platform-tools
+      - name: Install Android build toolchain
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Compile signed public Android APK
+        working-directory: android
+        run: bash ./gradlew --no-daemon assemblePublic -PpublicTestSigned
+      - name: Upload QA-only GPU driver manager APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: fivepocket-turnip-qa-smoke-apk
+          path: android/app/build/outputs/apk/public/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      # This is an asset-free smoke build (publicTestSigned), not a player APK:
+      # it deliberately has no public/config.json and cannot import or activate a game bundle.
+      # Do not publish it as an installable artifact. A real player APK is built only with the
+      # user's matching public metadata and is checked against their code bundle.
       # The taint scan needs the game's files, which CI never has. It is run before every release on a machine
       # with the maintainer's own discs (see docs/RELEASING.md); its control test here proves the scanner works.
+# Keep the push trigger: a fresh commit after Actions is enabled starts the validation/build workflow.

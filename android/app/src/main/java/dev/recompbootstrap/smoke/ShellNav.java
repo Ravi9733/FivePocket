@@ -219,13 +219,20 @@ final class ShellNav {
 
     /**
      * Touch: a tap on a column item of the current tab. On the highlighted item it is A (ENTERED or ACTIVATE);
-     * on any other it only moves the highlight there (MOVED), so that a finger that misses a slim row starts nothing.
+     * an explicit tap on an action activates it; a pane item is first selected, then entered.
      */
     int tapColumn(int item, boolean paneEnterable) {
         wentToStrip = false;   // nor does a tap on a column item
         if (item < 0 || item >= columnCount[tab]) return NOTHING;
+        // A direct tap is an explicit activation. Do not require the player to tap the same
+        // Play / Controller / About action twice just to move the highlight first.
+        if (!paneEnterable) {
+            onStrip = false;
+            inPane[tab] = false;
+            column[tab] = item;
+            return ACTIVATE;
+        }
         if (level() == COLUMN && column[tab] == item) {
-            if (!paneEnterable) return ACTIVATE;
             inPane[tab] = true;
             return ENTERED;
         }

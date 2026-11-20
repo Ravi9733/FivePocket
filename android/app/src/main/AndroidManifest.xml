@@ -40,6 +40,9 @@
         <!-- The menu (and, by intent extra, the graphics self-test). Still exported so that an explicit start
              by component name keeps working; it no longer carries the launcher category. fontScale: a change of
              the system's font size is handled in place (the menu stays on its tab, a disc copy keeps running). -->
+        <activity android:name=".GpuDriverActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
         <activity
             android:name=".BootstrapActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale"
