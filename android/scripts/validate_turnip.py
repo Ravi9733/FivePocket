@@ -82,6 +82,7 @@ def main():
     require(shell, r'"GPU Drivers"', "show GPU Drivers menu item")
     require(launcher, r'about\.startGpuDrivers\(\)', "open driver manager from menu")
     require(activity, r'System\.loadLibrary\("recomp_turnip_bootstrap"\).*prepareVulkanDriver.*System\.loadLibrary\("recomp_private_debug"\)', "install hook before Vulkan-linked loader")
+    require(activity, r'Log\.i\(TAG, customVulkan \? "Custom Vulkan driver active" : "Using system Vulkan driver"\)', "report actual driver activation state")
     require(activity, r'catch \(UnsatisfiedLinkError unavailable\).*system Vulkan', "preserve system fallback if bootstrap cannot load")
     require(modules, r'ext/libadrenotools', "pin AdrenoTools source submodule")
     print("TURNIP STATIC CHECKS PASS")
