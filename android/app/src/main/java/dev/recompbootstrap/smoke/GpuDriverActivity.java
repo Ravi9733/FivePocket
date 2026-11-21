@@ -43,7 +43,7 @@ public final class GpuDriverActivity extends Activity {
     private void refresh(){refreshList();}
     private void refreshList(){list.removeAllViews();List<TurnipDriverStore.Driver> ds=store.list();if(ds.isEmpty())list.addView(label("No custom drivers installed yet.",14,0xFF9FB3C8));
         for(TurnipDriverStore.Driver d:ds){boolean active=false;try{active=store.selected(d);}catch(Exception ignored){}final TurnipDriverStore.Driver item=d;
-            list.addView(label(d.label()+(active?" · ACTIVE":""),16,active?0xFF8FE3B0:Color.WHITE));
+            list.addView(label(d.label()+(active?" · SELECTED (next game start)":""),16,active?0xFF8FE3B0:Color.WHITE));
             list.addView(button(active?"Selected":"Select this driver",()->{try{store.select(item);status.setText(item.label()+" selected. Restart the game to activate.");refreshList();}catch(Exception e){status.setText("Selection failed: "+e.getMessage());}}));
         }
     }
