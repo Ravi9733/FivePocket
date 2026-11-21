@@ -21,6 +21,16 @@ public final class GpuDriverActivity extends Activity {
         LinearLayout page=new LinearLayout(this);page.setOrientation(1);page.setPadding(dp(20),dp(16),dp(20),dp(16));page.setBackgroundColor(0xFF12171F);
         page.addView(label("GPU Driver Settings",24,Color.WHITE));
         page.addView(label("Import an AdrenoTools ADPKG ZIP. The driver is installed in private app storage and loads on the next game start.",14,0xFFCBD5E1));
+        Switch fullscreen = new Switch(this);
+        fullscreen.setText("Fullscreen gameplay");
+        fullscreen.setTextColor(Color.WHITE);
+        fullscreen.setTextSize(16);
+        fullscreen.setPadding(dp(4), dp(10), dp(4), dp(10));
+        fullscreen.setChecked(getSharedPreferences("display_options", MODE_PRIVATE).getBoolean("fullscreen", true));
+        fullscreen.setOnCheckedChangeListener((view, enabled) ->
+                getSharedPreferences("display_options", MODE_PRIVATE).edit().putBoolean("fullscreen", enabled).apply());
+        page.addView(fullscreen);
+        page.addView(label("ON hides Android system bars during gameplay. OFF keeps status and navigation bars visible.",12,0xFF9FB3C8));
         page.addView(button("Import Turnip / ADPKG ZIP",this::pick));
         page.addView(button("Use System Vulkan",this::system));
         status=label("Installed drivers",14,0xFF9FB3C8);page.addView(status);
