@@ -105,6 +105,16 @@ public final class PrivateTraceActivity extends Activity {
     /** Live game windows use the whole panel: system bars hidden, shown transiently by an edge swipe. */
     private void fullPanel(){
         if(!liveRequested)return;
+        boolean fullscreen=getSharedPreferences("display_options",MODE_PRIVATE).getBoolean("fullscreen",true);
+        if(!fullscreen){
+            if(android.os.Build.VERSION.SDK_INT>=30){
+                getWindow().setDecorFitsSystemWindows(true);
+                WindowInsetsController controller=getWindow().getInsetsController();
+                if(controller!=null)controller.show(WindowInsets.Type.systemBars());
+            }
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            return;
+        }
         if(android.os.Build.VERSION.SDK_INT>=28)getWindow().getAttributes().layoutInDisplayCutoutMode=
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         if(android.os.Build.VERSION.SDK_INT>=30){
