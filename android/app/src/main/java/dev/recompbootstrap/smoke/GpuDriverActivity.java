@@ -9,11 +9,12 @@ import android.view.Gravity;
 import android.widget.*;
 import java.util.List;
 
-/** Native UI for importing and selecting app-private ADPKG/Turnip drivers. */
+/** Native UI for importing and selecting app-private ADPKG/Turnip drivers and display preferences. */
 public final class GpuDriverActivity extends Activity {
     private static final int PICK=7314;
-    private TurnipDriverStore store; private LinearLayout list; private TextView status;
+    private TurnipDriverStore store; private LinearLayout list; private TextView status; private Button fullscreen;
     @Override public void onCreate(Bundle b){super.onCreate(b);store=new TurnipDriverStore(this);getWindow().setStatusBarColor(0xFF12171F);getWindow().setNavigationBarColor(0xFF12171F);build();refresh();}
+    @Override protected void onResume(){super.onResume();if(fullscreen!=null)updateFullscreenLabel();}
     private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
     private TextView label(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setPadding(dp(4),dp(8),dp(4),dp(8));return t;}
     private Button button(String s,Runnable r){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setOnClickListener(v->r.run());return b;}
@@ -23,10 +24,14 @@ public final class GpuDriverActivity extends Activity {
         page.addView(label("Import an AdrenoTools ADPKG ZIP. The driver is installed in private app storage and loads on the next game start.",14,0xFFCBD5E1));
         page.addView(button("Import Turnip / ADPKG ZIP",this::pick));
         page.addView(button("Use System Vulkan",this::system));
+        fullscreen=button("",this::toggleFullscreen);page.addView(fullscreen);updateFullscreenLabel();
+        page.addView(label("Fullscreen applies to the game window. This preference is saved separately from game settings and saves.",13,0xFFCBD5E1));
         status=label("Installed drivers",14,0xFF9FB3C8);page.addView(status);
         ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         page.addView(button("Back",this::finish));setContentView(page);
     }
+    private void updateFullscreenLabel(){if(fullscreen!=null)fullscreen.setText("Fullscreen: "+(FullscreenPreference.enabled(this)?"ON":"OFF"));}
+    private void toggleFullscreen(){boolean next=!FullscreenPreference.enabled(this);if(!FullscreenPreference.setEnabled(this,next)){status.setText("Could not save fullscreen preference.");return;}updateFullscreenLabel();status.setText("Fullscreen "+(next?"ON":"OFF")+". Applies on the next game start.");}
     private void pick(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_TITLE,"Select Turnip ADPKG ZIP");startActivityForResult(i,PICK);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req!=PICK||result!=RESULT_OK||data==null||data.getData()==null)return;
         status.setText("Installing driver…");android.net.Uri uri=data.getData();
@@ -38,7 +43,7 @@ public final class GpuDriverActivity extends Activity {
     private void refresh(){refreshList();}
     private void refreshList(){list.removeAllViews();List<TurnipDriverStore.Driver> ds=store.list();if(ds.isEmpty())list.addView(label("No custom drivers installed yet.",14,0xFF9FB3C8));
         for(TurnipDriverStore.Driver d:ds){boolean active=false;try{active=store.selected(d);}catch(Exception ignored){}final TurnipDriverStore.Driver item=d;
-            list.addView(label(d.label()+(active?" · ACTIVE":""),16,active?0xFF8FE3B0:Color.WHITE));
+            list.addView(label(d.label()+(active?" · SELECTED (next game start)":""),16,active?0xFF8FE3B0:Color.WHITE));
             list.addView(button(active?"Selected":"Select this driver",()->{try{store.select(item);status.setText(item.label()+" selected. Restart the game to activate.");refreshList();}catch(Exception e){status.setText("Selection failed: "+e.getMessage());}}));
         }
     }
