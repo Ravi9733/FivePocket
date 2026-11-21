@@ -192,7 +192,7 @@ public final class PrivateTraceActivity extends Activity {
         } catch (UnsatisfiedLinkError unavailable) {
             Log.w(TAG, "Custom Vulkan bootstrap unavailable; continuing with system Vulkan", unavailable);
         }
-        Log.i(TAG, customVulkan ? "Custom Vulkan driver selected" : "Using system Vulkan driver");
+        Log.i(TAG, customVulkan ? "Custom Vulkan driver active" : "Using system Vulkan driver");
         System.loadLibrary("recomp_private_debug");
         if(gameRequested)gamepadInput=new PrivateGamepadInput(this);
         if(gameRequested)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
